@@ -67,8 +67,12 @@ def login():
 # --- PRODUCTS ---
 @app.get("/api/products")
 def get_products():
-    products = session.query(Product).all()
-    return jsonify([p.to_dict() for p in products]), 200
+    try:
+        products = session.query(Product).all()
+        return jsonify([p.to_dict() for p in products])
+    except Exception as e:
+        print(f"Error fetching products: {e}")
+        return jsonify(error="Failed to fetch products"), 500
 
 @app.get("/api/products/<int:pid>")
 def get_product(pid):
@@ -96,6 +100,39 @@ def add_product():
     session.commit()
     return jsonify(new_product.to_dict()), 201
 
+@app.put("/api/products/<int:pid>")
+def update_product(pid):
+    try:
+        product = session.query(Product).filter_by(id=pid).first()
+        if not product:
+            return jsonify(error="Product not found"), 404
+        
+        data = request.get_json()
+        print(f"Updating product {pid} with data:", data)
+        
+        # Update all fields
+        if "name" in data:
+            product.name = data["name"]
+        if "description" in data:
+            product.description = data["description"]
+        if "price" in data:
+            product.price = float(data["price"])
+        if "stock" in data:
+            product.stock = int(data["stock"])
+        if "image_url" in data:
+            product.image_url = data["image_url"]
+            print(f"Updated image_url to: {product.image_url}")
+        
+        session.commit()
+        updated_product = product.to_dict()
+        print(f"Product updated successfully:", updated_product)
+        return jsonify(updated_product)
+        
+    except Exception as e:
+        session.rollback()
+        print(f"Error updating product: {e}")
+        return jsonify(error=str(e)), 500
+
 @app.delete("/api/products/<int:pid>")
 # @jwt_required()
 def delete_product(pid):
@@ -114,20 +151,42 @@ def get_reviews(pid):
     return jsonify([r.to_dict() for r in reviews]), 200
 
 @app.post("/api/products/<int:pid>/reviews")
-# @jwt_required()
 def add_review(pid):
-    data = request.get_json()
-    rating, comment = data.get("rating"), data.get("comment")
-    
-    if not rating or not comment:
-        return jsonify(error="Rating and comment are required"), 400
-    
-    # For demo purposes, using a default user_id of 1
-    # In production, this would use JWT authentication
-    new_review = Review(user_id=1, product_id=pid, rating=rating, comment=comment)
-    session.add(new_review)
-    session.commit()
-    return jsonify(new_review.to_dict()), 201
+    try:
+        # Check if product exists
+        product = session.query(Product).filter_by(id=pid).first()
+        if not product:
+            return jsonify(error="Product not found"), 404
+            
+        data = request.get_json()
+        rating, comment = data.get("rating"), data.get("comment")
+        
+        if not rating or not comment:
+            return jsonify(error="Rating and comment are required"), 400
+            
+        if not isinstance(rating, int) or rating < 1 or rating > 5:
+            return jsonify(error="Rating must be between 1 and 5"), 400
+        
+        # Ensure default user exists
+        default_user = session.query(User).filter_by(email="demo@example.com").first()
+        if not default_user:
+            return jsonify(error="Default user not found"), 500
+        
+        new_review = Review(
+            user_id=default_user.id, 
+            product_id=pid, 
+            rating=rating, 
+            comment=comment
+        )
+        session.add(new_review)
+        session.commit()
+        
+        return jsonify(new_review.to_dict()), 201
+        
+    except Exception as e:
+        session.rollback()
+        print(f"Error adding review: {e}")
+        return jsonify(error="Failed to add review"), 500
 
 # --- ORDERS ---
 @app.post("/api/orders/checkout")

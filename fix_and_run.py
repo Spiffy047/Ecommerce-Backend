@@ -42,42 +42,42 @@ def setup_database():
         Product(
             name="Premium Wireless Headphones",
             description="Experience crystal-clear audio with our premium wireless headphones featuring active noise cancellation, 30-hour battery life, and premium comfort padding.",
-            price=299.99,
+            price=38999,
             image_url="/images/products/2f214881-fac9-4619-87c9-117078c1c44b.jpeg",
             stock=50
         ),
         Product(
             name="Smart Fitness Watch",
             description="Track your health and fitness goals with this advanced smartwatch. Features heart rate monitoring, GPS tracking, and 7-day battery life.",
-            price=249.99,
+            price=32499,
             image_url="/images/products/10b88481-d58a-4fc6-9232-5814ace71ca7.jpeg",
             stock=30
         ),
         Product(
             name="Wireless Charging Pad",
             description="Fast wireless charging for all Qi-enabled devices. Sleek design with LED indicators and overcharge protection.",
-            price=49.99,
+            price=6499,
             image_url="/images/products/18ad4ffb-f3b0-4c93-beb3-aea044962fac.jpeg",
             stock=100
         ),
         Product(
             name="Bluetooth Speaker",
             description="Portable Bluetooth speaker with 360-degree sound, waterproof design, and 12-hour battery life. Perfect for outdoor adventures.",
-            price=89.99,
+            price=11699,
             image_url="/images/products/40bd8805-7950-45a9-bfdd-65742489eecc.jpeg",
             stock=75
         ),
         Product(
             name="USB-C Hub",
             description="7-in-1 USB-C hub with HDMI, USB 3.0 ports, SD card reader, and fast charging. Essential for modern laptops and tablets.",
-            price=79.99,
+            price=10399,
             image_url="/images/products/6f7c380c-ec50-4361-bdf5-d8aad68ee148.jpeg",
             stock=60
         ),
         Product(
             name="Wireless Mouse",
             description="Ergonomic wireless mouse with precision tracking, customizable buttons, and long-lasting battery. Perfect for work and gaming.",
-            price=39.99,
+            price=5199,
             image_url="/images/products/7f364abb-8aa3-4dff-8d21-200a327535cc.jpeg",
             stock=120
         )
