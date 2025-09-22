@@ -37,12 +37,12 @@ def setup_database():
     session.add(default_user)
     session.commit()
     
-    # Create products with updated images
+    # Create sports products with updated images
     products = [
         Product(
-            name="Premium Wireless Headphones",
-            description="Experience crystal-clear audio with our premium wireless headphones featuring active noise cancellation, 30-hour battery life, and premium comfort padding.",
-            price=38999,
+            name="Professional Basketball",
+            description="Official size and weight basketball with superior grip and durability. Perfect for indoor and outdoor courts with premium leather construction.",
+            price=3899,
             image_url="/images/products/2f214881-fac9-4619-87c9-117078c1c44b.jpeg",
             stock=50
         ),
@@ -54,30 +54,30 @@ def setup_database():
             stock=30
         ),
         Product(
-            name="Wireless Charging Pad",
-            description="Fast wireless charging for all Qi-enabled devices. Sleek design with LED indicators and overcharge protection.",
+            name="Yoga Mat Premium",
+            description="High-quality non-slip yoga mat with extra cushioning. Eco-friendly materials, perfect grip, and easy to clean. Ideal for all yoga practices.",
             price=6499,
             image_url="/images/products/18ad4ffb-f3b0-4c93-beb3-aea044962fac.jpeg",
             stock=100
         ),
         Product(
-            name="Bluetooth Speaker",
-            description="Portable Bluetooth speaker with 360-degree sound, waterproof design, and 12-hour battery life. Perfect for outdoor adventures.",
+            name="Wireless Sports Earbuds",
+            description="Sweat-resistant wireless earbuds designed for athletes. Secure fit, premium sound quality, and 8-hour battery life. Perfect for workouts.",
             price=11699,
             image_url="/images/products/40bd8805-7950-45a9-bfdd-65742489eecc.jpeg",
             stock=75
         ),
         Product(
-            name="USB-C Hub",
-            description="7-in-1 USB-C hub with HDMI, USB 3.0 ports, SD card reader, and fast charging. Essential for modern laptops and tablets.",
-            price=10399,
+            name="Resistance Band Set",
+            description="Complete resistance band set with multiple resistance levels. Includes door anchor, handles, and ankle straps. Perfect for home workouts.",
+            price=4399,
             image_url="/images/products/6f7c380c-ec50-4361-bdf5-d8aad68ee148.jpeg",
             stock=60
         ),
         Product(
-            name="Wireless Mouse",
-            description="Ergonomic wireless mouse with precision tracking, customizable buttons, and long-lasting battery. Perfect for work and gaming.",
-            price=5199,
+            name="Running Shoes",
+            description="Lightweight running shoes with advanced cushioning and breathable mesh upper. Designed for comfort and performance on any terrain.",
+            price=12999,
             image_url="/images/products/7f364abb-8aa3-4dff-8d21-200a327535cc.jpeg",
             stock=120
         )
@@ -88,7 +88,7 @@ def setup_database():
     session.close()
     
     print("✅ Database setup complete!")
-    print("✅ Sample products added!")
+    print("✅ Sample sports products added!")
     print("✅ Default user created (demo@example.com / password)")
 
 if __name__ == "__main__":

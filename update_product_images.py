@@ -2,9 +2,9 @@ from app import session, app
 from models import Product
 
 with app.app_context():
-    # Update specific products with better images
+    # Update specific sports products with better images
     products_to_update = [
-        {"name": "Premium Wireless Headphones", "image": "/images/products/headphones.svg"},
+        {"name": "Professional Basketball", "image": "/images/products/basketball.svg"},
         {"name": "Smart Fitness Watch", "image": "/images/products/smartwatch.svg"},
     ]
     
@@ -16,4 +16,4 @@ with app.app_context():
     
     session.commit()
     session.close()
-    print("Product images updated successfully!")
+    print("Sports product images updated successfully!")

@@ -69,17 +69,41 @@ def login():
 def get_products():
     try:
         products = session.query(Product).all()
-        return jsonify([p.to_dict() for p in products])
+        product_list = []
+        for p in products:
+            product_list.append({
+                'id': p.id,
+                'name': p.name,
+                'description': p.description,
+                'price': p.price,
+                'image_url': p.image_url,
+                'stock': p.stock
+            })
+        return jsonify(product_list)
     except Exception as e:
         print(f"Error fetching products: {e}")
-        return jsonify(error="Failed to fetch products"), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify([]), 200
 
 @app.get("/api/products/<int:pid>")
 def get_product(pid):
-    product = session.query(Product).filter_by(id=pid).first()
-    if not product:
+    try:
+        product = session.query(Product).filter_by(id=pid).first()
+        if not product:
+            return jsonify(error="Product not found"), 404
+        
+        return jsonify({
+            'id': product.id,
+            'name': product.name,
+            'description': product.description,
+            'price': product.price,
+            'image_url': product.image_url,
+            'stock': product.stock
+        }), 200
+    except Exception as e:
+        print(f"Error fetching product: {e}")
         return jsonify(error="Product not found"), 404
-    return jsonify(product.to_dict(rules=('-orders.order_date', '-orders.user.password_hash', '-orders.products'))), 200
 
 @app.post("/api/products")
 # @jwt_required()
@@ -147,8 +171,20 @@ def delete_product(pid):
 # --- REVIEWS ---
 @app.get("/api/products/<int:pid>/reviews")
 def get_reviews(pid):
-    reviews = session.query(Review).filter_by(product_id=pid).all()
-    return jsonify([r.to_dict() for r in reviews]), 200
+    try:
+        reviews = session.query(Review).filter_by(product_id=pid).all()
+        review_list = []
+        for r in reviews:
+            review_list.append({
+                'id': r.id,
+                'rating': r.rating,
+                'comment': r.comment,
+                'created_at': r.created_at.isoformat() if r.created_at else None
+            })
+        return jsonify(review_list), 200
+    except Exception as e:
+        print(f"Error fetching reviews: {e}")
+        return jsonify([]), 200
 
 @app.post("/api/products/<int:pid>/reviews")
 def add_review(pid):
@@ -181,7 +217,12 @@ def add_review(pid):
         session.add(new_review)
         session.commit()
         
-        return jsonify(new_review.to_dict()), 201
+        return jsonify({
+            'id': new_review.id,
+            'rating': new_review.rating,
+            'comment': new_review.comment,
+            'created_at': new_review.created_at.isoformat() if new_review.created_at else None
+        }), 201
         
     except Exception as e:
         session.rollback()

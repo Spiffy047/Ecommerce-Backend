@@ -15,47 +15,47 @@ default_user = User(
 session.add(default_user)
 session.commit()
 
-# Create and add new products with local images
+# Create and add new sports products with local images
 new_products = [
     Product(
-        name="Premium Wireless Headphones",
-        description="Experience crystal-clear audio with our premium wireless headphones featuring active noise cancellation, 30-hour battery life, and premium comfort padding.",
-        price=299.99,
+        name="Professional Basketball",
+        description="Official size and weight basketball with superior grip and durability. Perfect for indoor and outdoor courts with premium leather construction.",
+        price=38.99,
         image_url="/images/products/2f214881-fac9-4619-87c9-117078c1c44b.jpeg",
         stock=50
     ),
     Product(
         name="Smart Fitness Watch",
         description="Track your health and fitness goals with this advanced smartwatch. Features heart rate monitoring, GPS tracking, and 7-day battery life.",
-        price=249.99,
+        price=324.99,
         image_url="/images/products/placeholder.svg",
         stock=30
     ),
     Product(
-        name="Wireless Charging Pad",
-        description="Fast wireless charging for all Qi-enabled devices. Sleek design with LED indicators and overcharge protection.",
-        price=49.99,
+        name="Yoga Mat Premium",
+        description="High-quality non-slip yoga mat with extra cushioning. Eco-friendly materials, perfect grip, and easy to clean. Ideal for all yoga practices.",
+        price=64.99,
         image_url="/images/products/placeholder.svg",
         stock=100
     ),
     Product(
-        name="Bluetooth Speaker",
-        description="Portable Bluetooth speaker with 360-degree sound, waterproof design, and 12-hour battery life. Perfect for outdoor adventures.",
-        price=89.99,
+        name="Wireless Sports Earbuds",
+        description="Sweat-resistant wireless earbuds designed for athletes. Secure fit, premium sound quality, and 8-hour battery life. Perfect for workouts.",
+        price=116.99,
         image_url="/images/products/placeholder.svg",
         stock=75
     ),
     Product(
-        name="USB-C Hub",
-        description="7-in-1 USB-C hub with HDMI, USB 3.0 ports, SD card reader, and fast charging. Essential for modern laptops and tablets.",
-        price=79.99,
+        name="Resistance Band Set",
+        description="Complete resistance band set with multiple resistance levels. Includes door anchor, handles, and ankle straps. Perfect for home workouts.",
+        price=43.99,
         image_url="/images/products/placeholder.svg",
         stock=60
     ),
     Product(
-        name="Wireless Mouse",
-        description="Ergonomic wireless mouse with precision tracking, customizable buttons, and long-lasting battery. Perfect for work and gaming.",
-        price=39.99,
+        name="Running Shoes",
+        description="Lightweight running shoes with advanced cushioning and breathable mesh upper. Designed for comfort and performance on any terrain.",
+        price=129.99,
         image_url="/images/products/placeholder.svg",
         stock=120
     )
@@ -65,4 +65,4 @@ session.add_all(new_products)
 session.commit()
 session.close()
 
-print("Products and default user added successfully!")
+print("Sports products and default user added successfully!")

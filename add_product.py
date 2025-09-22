@@ -9,10 +9,10 @@ from models import Product
 
 def add_product():
     with app.app_context():
-        print("=== Add New Product ===")
+        print("=== Add New Sports Item ===")
         
-        name = input("Product Name: ")
-        description = input("Product Description: ")
+        name = input("Sports Item Name: ")
+        description = input("Sports Item Description: ")
         
         while True:
             try:
@@ -43,7 +43,7 @@ def add_product():
         session.add(new_product)
         session.commit()
         
-        print(f"\n✅ Product '{name}' added successfully!")
+        print(f"\n✅ Sports item '{name}' added successfully!")
         print(f"📁 Make sure to add the image file '{image_filename}' to:")
         print("   frontend/public/images/products/")
         print(f"💰 Price: ${price}")
