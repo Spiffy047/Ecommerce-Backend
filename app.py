@@ -3,6 +3,7 @@ import os
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from functools import wraps
 import bcrypt
 from models import get_db, init_db, User, Product, Review, Order, order_items_table
 from sqlalchemy import create_engine
@@ -17,6 +18,18 @@ app = Flask(__name__, static_folder=REACT_BUILD_DIR)
 CORS(app) 
 app.config["JWT_SECRET_KEY"] = "dev-secret"
 jwt = JWTManager(app)
+
+# Admin authentication decorator
+def admin_required(f):
+    @wraps(f)
+    @jwt_required()
+    def decorated_function(*args, **kwargs):
+        user_id = get_jwt_identity()
+        user = session.query(User).filter_by(id=user_id).first()
+        if not user or not user.is_admin:
+            return jsonify(error="Admin access required"), 403
+        return f(*args, **kwargs)
+    return decorated_function
 
 engine = create_engine('sqlite:///ecommerce.db')
 Session = sessionmaker(bind=engine)
@@ -64,6 +77,35 @@ def login():
     access_token = create_access_token(identity=user.id)
     return jsonify(access_token=access_token), 200
 
+@app.post("/api/auth/change-password")
+@jwt_required()
+def change_password():
+    try:
+        user_id = get_jwt_identity()
+        user = session.query(User).filter_by(id=user_id).first()
+        if not user:
+            return jsonify(error="User not found"), 404
+            
+        data = request.get_json()
+        current_password = data.get("currentPassword")
+        new_password = data.get("newPassword")
+        
+        if not current_password or not new_password:
+            return jsonify(error="Current and new passwords are required"), 400
+            
+        if not bcrypt.checkpw(current_password.encode('utf-8'), user.password_hash.encode('utf-8')):
+            return jsonify(error="Current password is incorrect"), 400
+            
+        user.password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        session.commit()
+        
+        return jsonify(message="Password changed successfully"), 200
+        
+    except Exception as e:
+        session.rollback()
+        print(f"Error changing password: {e}")
+        return jsonify(error="Failed to change password"), 500
+
 # --- PRODUCTS ---
 @app.get("/api/products")
 def get_products():
@@ -106,7 +148,7 @@ def get_product(pid):
         return jsonify(error="Product not found"), 404
 
 @app.post("/api/products")
-# @jwt_required()
+@admin_required
 def add_product():
     data = request.get_json()
     name = data.get("name")
@@ -125,6 +167,7 @@ def add_product():
     return jsonify(new_product.to_dict()), 201
 
 @app.put("/api/products/<int:pid>")
+@admin_required
 def update_product(pid):
     try:
         product = session.query(Product).filter_by(id=pid).first()
@@ -158,7 +201,7 @@ def update_product(pid):
         return jsonify(error=str(e)), 500
 
 @app.delete("/api/products/<int:pid>")
-# @jwt_required()
+@admin_required
 def delete_product(pid):
     product = session.query(Product).filter_by(id=pid).first()
     if not product:

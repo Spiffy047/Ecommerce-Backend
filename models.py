@@ -33,6 +33,7 @@ class User(Base, SerializerMixin):
     email = Column(String, unique=True, nullable=False)
     password_hash = Column(String, nullable=False)
     name = Column(String)
+    is_admin = Column(Integer, default=0)
 
     reviews = relationship("Review", back_populates="user")
     orders = relationship("Order", back_populates="user")

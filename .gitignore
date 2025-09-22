@@ -1,0 +1,37 @@
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+ecommerce.db
+instance/
+
+# Credentials and admin scripts
+create_admin.py
+admin_setup.py
+user_credentials.py
+
+# Environment and config
+.env
+config.py
+secrets.py
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/

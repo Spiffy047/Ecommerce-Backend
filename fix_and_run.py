@@ -32,9 +32,19 @@ def setup_database():
     default_user = User(
         email="demo@example.com",
         password_hash=bcrypt.hashpw("password".encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
-        name="Demo User"
+        name="Demo User",
+        is_admin=0
     )
     session.add(default_user)
+    
+    # Create admin user
+    admin_user = User(
+        email="admin@sportzone.com",
+        password_hash=bcrypt.hashpw("admin123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
+        name="Admin User",
+        is_admin=1
+    )
+    session.add(admin_user)
     session.commit()
     
     # Create sports products with updated images
@@ -90,6 +100,7 @@ def setup_database():
     print("✅ Database setup complete!")
     print("✅ Sample sports products added!")
     print("✅ Default user created (demo@example.com / password)")
+    print("✅ Admin user created (admin@sportzone.com / admin123)")
 
 if __name__ == "__main__":
     setup_database()
