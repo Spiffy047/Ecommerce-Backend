@@ -1,19 +1,25 @@
 from app import session, app
-from models import Product, User, init_db
+from models import Product, User, Review, Order, init_db
 import bcrypt
 
 # Initialize the database and create tables
 with app.app_context():
     init_db()
 
-# Create a default user for reviews
-default_user = User(
-    email="demo@example.com",
-    password_hash=bcrypt.hashpw("password".encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
-    name="Demo User"
-)
-session.add(default_user)
+# Clear existing products
+session.query(Product).delete()
 session.commit()
+
+# Create a default user for reviews if not exists
+existing_user = session.query(User).filter_by(email="demo@example.com").first()
+if not existing_user:
+    default_user = User(
+        email="demo@example.com",
+        password_hash=bcrypt.hashpw("password".encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
+        name="Demo User"
+    )
+    session.add(default_user)
+    session.commit()
 
 # Create and add new products with local images
 new_products = [
@@ -21,7 +27,7 @@ new_products = [
         name="Premium Wireless Headphones",
         description="Experience crystal-clear audio with our premium wireless headphones featuring active noise cancellation, 30-hour battery life, and premium comfort padding.",
         price=299.99,
-        image_url="/images/products/2f214881-fac9-4619-87c9-117078c1c44b.jpeg",
+        image_url="/images/products/placeholder.svg",
         stock=50
     ),
     Product(
@@ -65,4 +71,5 @@ session.add_all(new_products)
 session.commit()
 session.close()
 
-print("Products and default user added successfully!")
+print("Database reset complete! New products added with local images.")
+print("You can now replace the placeholder.svg files in /frontend/public/images/products/ with your actual product images.")

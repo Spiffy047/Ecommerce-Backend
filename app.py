@@ -1,3 +1,4 @@
+# app.py
 import os
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
@@ -10,7 +11,6 @@ from sqlalchemy import and_
 
 # --- Flask & SQLAlchemy Setup ---
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-# This line correctly points to the `dist` folder inside your `frontend` directory
 REACT_BUILD_DIR = os.path.join(BASE_DIR, '..', 'frontend', 'dist')
 
 app = Flask(__name__, static_folder=REACT_BUILD_DIR)
@@ -36,75 +36,68 @@ def serve(path):
 def register():
     data = request.get_json()
     email, password, name = data.get("email"), data.get("password"), data.get("name")
+    
     if not email or not password:
-        return jsonify(error="Email/password required"), 400
+        return jsonify(error="Email and password are required"), 400
     
     existing_user = session.query(User).filter_by(email=email).first()
     if existing_user:
-        return jsonify(error="Email already in use"), 400
-
-    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-    new_user = User(email=email, password_hash=hashed_password, name=name)
+        return jsonify(error="User already exists"), 409
+        
+    password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    new_user = User(email=email, password_hash=password_hash, name=name)
     session.add(new_user)
     session.commit()
-    token = create_access_token(identity=new_user.id)
-    return jsonify(token=token, user=new_user.to_dict()), 201
+    
+    access_token = create_access_token(identity=new_user.id)
+    return jsonify(message="User created successfully", access_token=access_token), 201
 
 @app.post("/api/auth/login")
 def login():
     data = request.get_json()
     email, password = data.get("email"), data.get("password")
+    
     user = session.query(User).filter_by(email=email).first()
     if not user or not bcrypt.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8')):
-        return jsonify(error="Invalid credentials"), 400
+        return jsonify(error="Invalid email or password"), 401
     
-    token = create_access_token(identity=user.id)
-    return jsonify(token=token, user=user.to_dict())
+    access_token = create_access_token(identity=user.id)
+    return jsonify(access_token=access_token), 200
 
-# --- PRODUCTS (Full CRUD) ---
+# --- PRODUCTS ---
 @app.get("/api/products")
 def get_products():
     products = session.query(Product).all()
-    return jsonify([p.to_dict() for p in products])
+    return jsonify([p.to_dict() for p in products]), 200
 
 @app.get("/api/products/<int:pid>")
 def get_product(pid):
     product = session.query(Product).filter_by(id=pid).first()
     if not product:
         return jsonify(error="Product not found"), 404
-    return jsonify(product.to_dict())
+    return jsonify(product.to_dict(rules=('-orders.order_date', '-orders.user.password_hash', '-orders.products'))), 200
 
 @app.post("/api/products")
+# @jwt_required()
 def add_product():
     data = request.get_json()
-    try:
-        new_product = Product(
-            name=data["name"],
-            description=data.get("description"),
-            price=data["price"],
-            image_url=data.get("image_url"),
-            stock=data.get("stock")
-        )
-        session.add(new_product)
-        session.commit()
-        return jsonify(new_product.to_dict()), 201
-    except KeyError:
-        return jsonify(error="Missing required fields"), 400
-
-@app.patch("/api/products/<int:pid>")
-def update_product(pid):
-    product = session.query(Product).filter_by(id=pid).first()
-    if not product:
-        return jsonify(error="Product not found"), 404
+    name = data.get("name")
+    if not name:
+        return jsonify(error="Product name is required"), 400
     
-    data = request.get_json()
-    for key, value in data.items():
-        setattr(product, key, value)
-    
+    new_product = Product(
+        name=name,
+        description=data.get("description"),
+        price=data.get("price"),
+        image_url=data.get("image_url"),
+        stock=data.get("stock")
+    )
+    session.add(new_product)
     session.commit()
-    return jsonify(product.to_dict())
+    return jsonify(new_product.to_dict()), 201
 
 @app.delete("/api/products/<int:pid>")
+# @jwt_required()
 def delete_product(pid):
     product = session.query(Product).filter_by(id=pid).first()
     if not product:
@@ -112,15 +105,16 @@ def delete_product(pid):
     
     session.delete(product)
     session.commit()
-    return jsonify(message="Product deleted"), 204
+    return jsonify(message="Product deleted"), 200
 
 # --- REVIEWS ---
 @app.get("/api/products/<int:pid>/reviews")
 def get_reviews(pid):
-    reviews = session.query(Review).filter_by(product_id=pid).order_by(Review.created_at.desc()).all()
-    return jsonify([r.to_dict() for r in reviews])
+    reviews = session.query(Review).filter_by(product_id=pid).all()
+    return jsonify([r.to_dict() for r in reviews]), 200
 
 @app.post("/api/products/<int:pid>/reviews")
+# @jwt_required()
 def add_review(pid):
     data = request.get_json()
     rating, comment = data.get("rating"), data.get("comment")
@@ -159,9 +153,10 @@ def checkout():
         session.add(product)
 
     session.commit()
-    return jsonify(orderId=new_order.id), 201
+    return jsonify(message="Checkout successful"), 200
 
 if __name__ == "__main__":
-    from models import init_db
-    init_db()
+    with app.app_context():
+        # This will create tables if they don't exist
+        init_db() 
     app.run(port=5000, debug=True)

@@ -1,3 +1,4 @@
+# models.py
 import sqlalchemy
 from sqlalchemy import create_engine, MetaData, orm, Table
 from sqlalchemy.orm import relationship
@@ -18,7 +19,6 @@ metadata = MetaData(naming_convention=convention)
 Base = declarative_base(metadata=metadata)
 
 # Define the association table for the many-to-many relationship
-# Correct way to define the association table
 order_items_table = Table(
     "order_items",
     Base.metadata,
@@ -44,10 +44,10 @@ class Product(Base, SerializerMixin):
     __tablename__ = "products"
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
-    description = Column(Text)
+    description = Column(String)
     price = Column(Float, nullable=False)
     image_url = Column(String)
-    stock = Column(Integer)
+    stock = Column(Integer, default=0)
 
     reviews = relationship("Review", back_populates="product")
     orders = relationship("Order", secondary=order_items_table, back_populates="products")
@@ -99,8 +99,4 @@ def close_db(e=None):
 def clear_db():
     engine = create_engine('sqlite:///ecommerce.db')
     Base.metadata.drop_all(engine)
-    
-if __name__ == '__main__':
-    engine = create_engine('sqlite:///ecommerce.db')
-    Base.metadata.create_all(engine)
-    print("Database and tables created.")
+    print("Database tables cleared.")
