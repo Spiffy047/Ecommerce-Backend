@@ -4,3 +4,4 @@ flask-sqlalchemy
 sqlalchemy-serializer
 bcrypt
 flask-jwt-extended
+gunicorn

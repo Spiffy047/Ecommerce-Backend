@@ -302,4 +302,5 @@ if __name__ == "__main__":
     with app.app_context():
         # This will create tables if they don't exist
         init_db() 
-    app.run(port=5000, debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
