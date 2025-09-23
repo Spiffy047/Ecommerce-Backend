@@ -298,9 +298,38 @@ def checkout():
     session.commit()
     return jsonify(message="Checkout successful"), 200
 
-if __name__ == "__main__":
+def initialize_app():
+    """Initialize database and create admin user if needed"""
     with app.app_context():
-        # This will create tables if they don't exist
-        init_db() 
+        init_db()
+        
+        # Check if admin user exists, create if not
+        admin_user = session.query(User).filter_by(email="admin@sportzone.com").first()
+        if not admin_user:
+            import bcrypt
+            admin_user = User(
+                email="admin@sportzone.com",
+                password_hash=bcrypt.hashpw("admin123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
+                name="Admin User",
+                is_admin=1
+            )
+            session.add(admin_user)
+            
+            # Add sample products if none exist
+            if session.query(Product).count() == 0:
+                products = [
+                    Product(name="Professional Basketball", description="Official size basketball", price=3899, image_url="/images/products/basketball.jpg", stock=50),
+                    Product(name="Smart Fitness Watch", description="Advanced fitness tracking", price=32499, image_url="/images/products/watch.jpg", stock=30),
+                    Product(name="Yoga Mat Premium", description="Non-slip yoga mat", price=6499, image_url="/images/products/yoga.jpg", stock=100)
+                ]
+                session.add_all(products)
+            
+            session.commit()
+            print("Database initialized with admin user and sample data")
+
+# Initialize on startup
+initialize_app()
+
+if __name__ == "__main__":
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
