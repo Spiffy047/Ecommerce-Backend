@@ -11,7 +11,13 @@ app = Flask(__name__)
 app.config['JWT_SECRET_KEY'] = 'your-secret-key-change-in-production'
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
 
-CORS(app)
+CORS(app, resources={
+    r"/api/*": {
+        "origins": "*",
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
 jwt = JWTManager(app)
 
 def get_db_connection():
@@ -622,6 +628,147 @@ def reset_password():
     except Exception as e:
         print(f"Reset password error: {e}")
         return jsonify({'error': 'Failed to reset password', 'details': str(e)}), 500
+
+@app.route('/api/user/profile', methods=['GET'])
+@jwt_required()
+def get_user_profile():
+    try:
+        user_id = get_jwt_identity()
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = conn.cursor()
+        cursor.execute('SELECT email, name, phone, address FROM users WHERE id = ?', (user_id,))
+        user = cursor.fetchone()
+        conn.close()
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        return jsonify({
+            'email': user[0],
+            'name': user[1],
+            'phone': user[2] or '',
+            'address': user[3] or ''
+        })
+        
+    except Exception as e:
+        print(f"Get user profile error: {e}")
+        return jsonify({'error': 'Failed to fetch profile', 'details': str(e)}), 500
+
+@app.route('/api/user/profile', methods=['PUT'])
+@jwt_required()
+def update_user_profile():
+    try:
+        user_id = get_jwt_identity()
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE users SET name = ?, phone = ?, address = ?
+            WHERE id = ?
+        ''', (data.get('name'), data.get('phone'), data.get('address'), user_id))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'message': 'Profile updated successfully'})
+        
+    except Exception as e:
+        print(f"Update user profile error: {e}")
+        return jsonify({'error': 'Failed to update profile', 'details': str(e)}), 500
+
+@app.route('/api/user/orders', methods=['GET'])
+@jwt_required()
+def get_user_orders():
+    try:
+        user_id = get_jwt_identity()
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT o.id, o.order_date, o.status, o.total_amount
+            FROM orders o
+            WHERE o.user_id = ?
+            ORDER BY o.order_date DESC
+        ''', (user_id,))
+        orders = cursor.fetchall()
+        
+        order_list = []
+        for order in orders:
+            cursor.execute('''
+                SELECT oi.quantity, oi.price_at_time, p.name, p.image_url
+                FROM order_items oi
+                JOIN products p ON oi.product_id = p.id
+                WHERE oi.order_id = ?
+            ''', (order[0],))
+            items = cursor.fetchall()
+            
+            order_list.append({
+                'id': order[0],
+                'order_date': order[1],
+                'status': order[2],
+                'total_amount': order[3],
+                'items': [{
+                    'quantity': item[0],
+                    'price': item[1],
+                    'product_name': item[2],
+                    'image_url': item[3]
+                } for item in items]
+            })
+        
+        conn.close()
+        return jsonify(order_list)
+        
+    except Exception as e:
+        print(f"Get user orders error: {e}")
+        return jsonify({'error': 'Failed to fetch orders', 'details': str(e)}), 500
+
+@app.route('/api/auth/change-password', methods=['POST'])
+@jwt_required()
+def change_password():
+    try:
+        user_id = get_jwt_identity()
+        data = request.get_json()
+        
+        if not data or not data.get('currentPassword') or not data.get('newPassword'):
+            return jsonify({'error': 'Current and new password required'}), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = conn.cursor()
+        cursor.execute('SELECT password_hash FROM users WHERE id = ?', (user_id,))
+        user = cursor.fetchone()
+        
+        if not user or not bcrypt.checkpw(data['currentPassword'].encode('utf-8'), user[0].encode('utf-8')):
+            conn.close()
+            return jsonify({'error': 'Current password is incorrect'}), 401
+        
+        new_password_hash = bcrypt.hashpw(data['newPassword'].encode('utf-8'), bcrypt.gensalt())
+        cursor.execute('UPDATE users SET password_hash = ? WHERE id = ?', (new_password_hash.decode('utf-8'), user_id))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'message': 'Password changed successfully'})
+        
+    except Exception as e:
+        print(f"Change password error: {e}")
+        return jsonify({'error': 'Failed to change password', 'details': str(e)}), 500
 
 if __name__ == '__main__':
     init_db()
