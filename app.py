@@ -49,7 +49,7 @@ def init_db():
         # Check if tables exist
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
         if cursor.fetchone():
-            print("Database already exists")
+            print("Database already exists - preserving existing data")
             conn.close()
             return
         
@@ -119,24 +119,19 @@ def init_db():
             )
         ''')
         
-        # Create admin user
-        admin_password = bcrypt.hashpw('Admin@123'.encode('utf-8'), bcrypt.gensalt())
-        cursor.execute('''
-            INSERT INTO users (email, password_hash, name, is_admin, security_question_1, security_answer_1, security_question_2, security_answer_2)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', ('admin@sportzone.com', admin_password.decode('utf-8'), 'Admin User', 1, 
-              'What is your favorite color?', bcrypt.hashpw('blue'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
-              'What city were you born in?', bcrypt.hashpw('admin'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')))
+        # Create admin user only if not exists
+        cursor.execute('SELECT id FROM users WHERE email = ?', ('admin@sportzone.com',))
+        if not cursor.fetchone():
+            admin_password = bcrypt.hashpw('Admin@123'.encode('utf-8'), bcrypt.gensalt())
+            cursor.execute('''
+                INSERT INTO users (email, password_hash, name, is_admin, security_question_1, security_answer_1, security_question_2, security_answer_2)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', ('admin@sportzone.com', admin_password.decode('utf-8'), 'Admin User', 1, 
+                  'What is your favorite color?', bcrypt.hashpw('blue'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
+                  'What city were you born in?', bcrypt.hashpw('admin'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')))
+            print('Admin user created')
         
-        # Add sample products with KSh prices
-        products = [
-            ('Nike Air Max', 'Premium running shoes', 12999.00, 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400', 50),
-            ('Adidas Football', 'Professional football', 2999.00, 'https://images.unsplash.com/photo-1486286701208-1d58e9338013?w=400', 30),
-            ('Basketball Jersey', 'Team basketball jersey', 4999.00, 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400', 25),
-            ('Tennis Racket', 'Professional tennis racket', 8999.00, 'https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=400', 15),
-            ('Yoga Mat', 'Premium yoga mat', 3999.00, 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=400', 40)
-        ]
-        cursor.executemany('INSERT INTO products (name, description, price, image_url, stock) VALUES (?, ?, ?, ?, ?)', products)
+        # DO NOT add sample products - preserve existing products
         
         conn.commit()
         conn.close()
