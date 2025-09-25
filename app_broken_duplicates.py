@@ -58,6 +58,7 @@ def init_db():
             conn.close()
             return
         
+        # Create all tables
         cursor.execute('''
             CREATE TABLE users (
                 id SERIAL PRIMARY KEY,
@@ -124,6 +125,7 @@ def init_db():
             )
         ''')
         
+        # Create admin user
         cursor.execute('SELECT id FROM users WHERE email = %s', ('admin@sportzone.com',))
         if not cursor.fetchone():
             admin_password = bcrypt.hashpw('Admin@123'.encode('utf-8'), bcrypt.gensalt())
@@ -142,6 +144,7 @@ def init_db():
         print(f"Database initialization error: {e}")
         raise
 
+# Authentication endpoints
 @app.route('/api/auth/register', methods=['POST'])
 def register():
     try:
@@ -245,6 +248,7 @@ def admin_login():
         print(f"Admin login error: {e}")
         return jsonify({'error': 'Admin login failed'}), 500
 
+# Product endpoints
 @app.route('/api/products', methods=['GET'])
 def get_products():
     try:
@@ -308,6 +312,7 @@ def add_product():
         print(f"Add product error: {e}")
         return jsonify({'error': 'Failed to add product'}), 500
 
+# Product CRUD
 @app.route('/api/products/<int:product_id>', methods=['GET'])
 def get_product(product_id):
     try:
@@ -392,6 +397,15 @@ def delete_product(product_id):
             conn.close()
             return jsonify({'error': 'Admin access required'}), 403
         
+        # Check for dependencies
+        cursor.execute('SELECT COUNT(*) FROM order_items WHERE product_id = %s', (product_id,))
+        order_count = cursor.fetchone()[0]
+        
+        if order_count > 0:
+            conn.close()
+            return jsonify({'error': 'Cannot delete product with existing orders'}), 400
+        
+        # Delete reviews first
         cursor.execute('DELETE FROM reviews WHERE product_id = %s', (product_id,))
         cursor.execute('DELETE FROM products WHERE id = %s', (product_id,))
         
@@ -403,6 +417,7 @@ def delete_product(product_id):
         print(f"Delete product error: {e}")
         return jsonify({'error': 'Failed to delete product'}), 500
 
+# Reviews
 @app.route('/api/products/<int:product_id>/reviews', methods=['GET'])
 def get_reviews(product_id):
     try:
@@ -449,6 +464,8 @@ def add_review(product_id):
             return jsonify({'error': 'Database connection failed'}), 500
         
         cursor = conn.cursor()
+        
+        # Check if user already reviewed this product
         cursor.execute('SELECT id FROM reviews WHERE user_id = %s AND product_id = %s', (user_id, product_id))
         if cursor.fetchone():
             conn.close()
@@ -467,6 +484,7 @@ def add_review(product_id):
         print(f"Add review error: {e}")
         return jsonify({'error': 'Failed to add review'}), 500
 
+# Orders and Checkout
 @app.route('/api/orders/checkout', methods=['POST'])
 @jwt_required()
 def checkout():
@@ -485,6 +503,7 @@ def checkout():
         
         cursor = conn.cursor()
         
+        # Calculate total
         total_amount = 0
         for item in data['items']:
             cursor.execute('SELECT price, stock FROM products WHERE id = %s', (item['productId'],))
@@ -499,6 +518,7 @@ def checkout():
             
             total_amount += float(product[0]) * item['quantity']
         
+        # Create order
         cursor.execute('''
             INSERT INTO orders (user_id, total_amount, status)
             VALUES (%s, %s, %s) RETURNING id
@@ -506,6 +526,7 @@ def checkout():
         
         order_id = cursor.fetchone()[0]
         
+        # Add order items and update stock
         for item in data['items']:
             cursor.execute('SELECT price FROM products WHERE id = %s', (item['productId'],))
             product = cursor.fetchone()
@@ -528,6 +549,7 @@ def checkout():
         print(f"Checkout error: {e}")
         return jsonify({'error': 'Checkout failed'}), 500
 
+# User Profile
 @app.route('/api/user/profile', methods=['GET'])
 @jwt_required()
 def get_user_profile():
@@ -635,6 +657,127 @@ def get_user_orders():
         print(f"Get user orders error: {e}")
         return jsonify({'error': 'Failed to fetch orders'}), 500
 
+# Password Management
+@app.route('/api/auth/forgot-password', methods=['POST'])
+def forgot_password():
+    try:
+        data = request.get_json()
+        if not data or not data.get('email'):
+            return jsonify({'error': 'Email required'}), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = conn.cursor()
+        cursor.execute('SELECT security_question_1, security_question_2 FROM users WHERE email = %s', (data['email'],))
+        user = cursor.fetchone()
+        conn.close()
+        
+        if not user:
+            return jsonify({'error': 'Email not found'}), 404
+        
+        return jsonify({
+            'security_questions': [user[0], user[1]]
+        }), 200
+        
+    except Exception as e:
+        print(f"Forgot password error: {e}")
+        return jsonify({'error': 'Failed to process request'}), 500
+
+@app.route('/api/auth/verify-security', methods=['POST'])
+def verify_security():
+    try:
+        data = request.get_json()
+        if not data or not data.get('email') or not data.get('answers'):
+            return jsonify({'error': 'Email and answers required'}), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, security_answer_1, security_answer_2 FROM users WHERE email = %s', (data['email'],))
+        user = cursor.fetchone()
+        conn.close()
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        if (bcrypt.checkpw(data['answers'][0].encode('utf-8'), user[1].encode('utf-8')) and
+            bcrypt.checkpw(data['answers'][1].encode('utf-8'), user[2].encode('utf-8'))):
+            reset_token = create_access_token(identity=str(user[0]), expires_delta=timedelta(minutes=15))
+            return jsonify({'reset_token': reset_token}), 200
+        
+        return jsonify({'error': 'Security answers do not match'}), 401
+        
+    except Exception as e:
+        print(f"Verify security error: {e}")
+        return jsonify({'error': 'Failed to verify security answers'}), 500
+
+@app.route('/api/auth/reset-password', methods=['POST'])
+@jwt_required()
+def reset_password():
+    try:
+        user_id = get_jwt_identity()
+        data = request.get_json()
+        
+        if not data or not data.get('new_password'):
+            return jsonify({'error': 'New password required'}), 400
+        
+        password_hash = bcrypt.hashpw(data['new_password'].encode('utf-8'), bcrypt.gensalt())
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = conn.cursor()
+        cursor.execute('UPDATE users SET password_hash = %s WHERE id = %s', (password_hash.decode('utf-8'), user_id))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'message': 'Password reset successfully'}), 200
+        
+    except Exception as e:
+        print(f"Reset password error: {e}")
+        return jsonify({'error': 'Failed to reset password'}), 500
+
+@app.route('/api/auth/change-password', methods=['POST'])
+@jwt_required()
+def change_password():
+    try:
+        user_id = get_jwt_identity()
+        data = request.get_json()
+        
+        if not data or not data.get('currentPassword') or not data.get('newPassword'):
+            return jsonify({'error': 'Current and new password required'}), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = conn.cursor()
+        cursor.execute('SELECT password_hash FROM users WHERE id = %s', (user_id,))
+        user = cursor.fetchone()
+        
+        if not user or not bcrypt.checkpw(data['currentPassword'].encode('utf-8'), user[0].encode('utf-8')):
+            conn.close()
+            return jsonify({'error': 'Current password is incorrect'}), 401
+        
+        new_password_hash = bcrypt.hashpw(data['newPassword'].encode('utf-8'), bcrypt.gensalt())
+        cursor.execute('UPDATE users SET password_hash = %s WHERE id = %s', (new_password_hash.decode('utf-8'), user_id))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'message': 'Password changed successfully'})
+        
+    except Exception as e:
+        print(f"Change password error: {e}")
+        return jsonify({'error': 'Failed to change password'}), 500
+
+
+
 @app.route('/api/admin/bestsellers', methods=['GET'])
 @jwt_required()
 def get_bestsellers():
@@ -665,6 +808,124 @@ def get_bestsellers():
     except Exception as e:
         print(f"Get bestsellers error: {e}")
         return jsonify({'error': 'Failed to fetch bestsellers'}), 500
+
+@app.route('/api/auth/forgot-password', methods=['POST'])
+def forgot_password():
+    try:
+        data = request.get_json()
+        if not data or not data.get('email'):
+            return jsonify({'error': 'Email required'}), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = conn.cursor()
+        cursor.execute('SELECT security_question_1, security_question_2 FROM users WHERE email = %s', (data['email'],))
+        user = cursor.fetchone()
+        conn.close()
+        
+        if not user:
+            return jsonify({'error': 'Email not found'}), 404
+        
+        return jsonify({
+            'security_questions': [user[0], user[1]]
+        }), 200
+        
+    except Exception as e:
+        print(f"Forgot password error: {e}")
+        return jsonify({'error': 'Failed to process request'}), 500
+
+@app.route('/api/auth/verify-security', methods=['POST'])
+def verify_security():
+    try:
+        data = request.get_json()
+        if not data or not data.get('email') or not data.get('answers'):
+            return jsonify({'error': 'Email and answers required'}), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, security_answer_1, security_answer_2 FROM users WHERE email = %s', (data['email'],))
+        user = cursor.fetchone()
+        conn.close()
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        if (bcrypt.checkpw(data['answers'][0].encode('utf-8'), user[1].encode('utf-8')) and
+            bcrypt.checkpw(data['answers'][1].encode('utf-8'), user[2].encode('utf-8'))):
+            reset_token = create_access_token(identity=str(user[0]), expires_delta=timedelta(minutes=15))
+            return jsonify({'reset_token': reset_token}), 200
+        
+        return jsonify({'error': 'Security answers do not match'}), 401
+        
+    except Exception as e:
+        print(f"Verify security error: {e}")
+        return jsonify({'error': 'Failed to verify security answers'}), 500
+
+@app.route('/api/auth/reset-password', methods=['POST'])
+@jwt_required()
+def reset_password():
+    try:
+        user_id = get_jwt_identity()
+        data = request.get_json()
+        
+        if not data or not data.get('new_password'):
+            return jsonify({'error': 'New password required'}), 400
+        
+        password_hash = bcrypt.hashpw(data['new_password'].encode('utf-8'), bcrypt.gensalt())
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = conn.cursor()
+        cursor.execute('UPDATE users SET password_hash = %s WHERE id = %s', (password_hash.decode('utf-8'), user_id))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'message': 'Password reset successfully'}), 200
+        
+    except Exception as e:
+        print(f"Reset password error: {e}")
+        return jsonify({'error': 'Failed to reset password'}), 500
+
+@app.route('/api/auth/change-password', methods=['POST'])
+@jwt_required()
+def change_password():
+    try:
+        user_id = get_jwt_identity()
+        data = request.get_json()
+        
+        if not data or not data.get('currentPassword') or not data.get('newPassword'):
+            return jsonify({'error': 'Current and new password required'}), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = conn.cursor()
+        cursor.execute('SELECT password_hash FROM users WHERE id = %s', (user_id,))
+        user = cursor.fetchone()
+        
+        if not user or not bcrypt.checkpw(data['currentPassword'].encode('utf-8'), user[0].encode('utf-8')):
+            conn.close()
+            return jsonify({'error': 'Current password is incorrect'}), 401
+        
+        new_password_hash = bcrypt.hashpw(data['newPassword'].encode('utf-8'), bcrypt.gensalt())
+        cursor.execute('UPDATE users SET password_hash = %s WHERE id = %s', (new_password_hash.decode('utf-8'), user_id))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'message': 'Password changed successfully'})
+        
+    except Exception as e:
+        print(f"Change password error: {e}")
+        return jsonify({'error': 'Failed to change password'}), 500
 
 if __name__ == '__main__':
     init_db()
