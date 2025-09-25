@@ -18,14 +18,16 @@ convention = {
 metadata = MetaData(naming_convention=convention)
 Base = declarative_base(metadata=metadata)
 
-# Define the association table for the many-to-many relationship
-order_items_table = Table(
-    "order_items",
-    Base.metadata,
-    Column("order_id", Integer, ForeignKey("orders.id"), primary_key=True),
-    Column("product_id", Integer, ForeignKey("products.id"), primary_key=True),
-    Column("quantity", Integer),
-)
+class OrderItem(Base, SerializerMixin):
+    __tablename__ = "order_items"
+    id = Column(Integer, primary_key=True)
+    order_id = Column(Integer, ForeignKey("orders.id"))
+    product_id = Column(Integer, ForeignKey("products.id"))
+    quantity = Column(Integer)
+    price_at_time = Column(Float)
+    
+    order = relationship("Order", back_populates="order_items")
+    product = relationship("Product")
 
 class User(Base, SerializerMixin):
     __tablename__ = "users"
@@ -33,7 +35,14 @@ class User(Base, SerializerMixin):
     email = Column(String, unique=True, nullable=False)
     password_hash = Column(String, nullable=False)
     name = Column(String)
+    phone = Column(String)
+    address = Column(Text)
     is_admin = Column(Integer, default=0)
+    security_question_1 = Column(String)
+    security_answer_1 = Column(String)
+    security_question_2 = Column(String)
+    security_answer_2 = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
     reviews = relationship("Review", back_populates="user")
     orders = relationship("Order", back_populates="user")
@@ -49,9 +58,9 @@ class Product(Base, SerializerMixin):
     price = Column(Float, nullable=False)
     image_url = Column(String)
     stock = Column(Integer, default=0)
+    total_sold = Column(Integer, default=0)
 
     reviews = relationship("Review", back_populates="product")
-    orders = relationship("Order", secondary=order_items_table, back_populates="products")
 
     def __repr__(self):
         return f'<Product id={self.id} name={self.name}>'
@@ -78,9 +87,10 @@ class Order(Base, SerializerMixin):
     user_id = Column(Integer, ForeignKey("users.id"))
     order_date = Column(DateTime, default=datetime.utcnow)
     status = Column(String)
+    total_amount = Column(Float)
 
     user = relationship("User", back_populates="orders")
-    products = relationship("Product", secondary=order_items_table, back_populates="orders")
+    order_items = relationship("OrderItem", back_populates="order")
 
     def __repr__(self):
         return f'<Order id={self.id}>'
