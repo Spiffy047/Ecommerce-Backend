@@ -15,7 +15,7 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 REACT_BUILD_DIR = os.path.join(BASE_DIR, '..', 'frontend', 'dist')
 
 app = Flask(__name__, static_folder=REACT_BUILD_DIR)
-CORS(app, origins=["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:5173", "https://sportzone-ecommerce.netlify.app", "https://sportzone-ecommerce.vercel.app"], 
+CORS(app, origins=["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:5173", "https://sportzone-ecommerce.netlify.app", "https://sportzone-ecommerce.vercel.app", "https://sportzone-t1e0.onrender.com"], 
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
      allow_headers=["Content-Type", "Authorization"])
 app.config["JWT_SECRET_KEY"] = "dev-secret"
@@ -472,7 +472,7 @@ def initialize_app():
             import bcrypt
             admin_user = User(
                 email="admin@sportzone.com",
-                password_hash=bcrypt.hashpw("admin123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
+                password_hash=bcrypt.hashpw("Admin@123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
                 name="Admin User",
                 is_admin=1
             )

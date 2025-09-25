@@ -89,13 +89,13 @@ def reset_database():
         )
     ''')
     
-    # Insert admin user (password: admin123)
+    # Insert admin user (password: Admin@123)
     cursor.execute('''
         INSERT INTO users (email, password_hash, name, is_admin, security_question_1, security_answer_1, security_question_2, security_answer_2)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         'admin@sportzone.com',
-        '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj6hsxq5S/kS',  # admin123
+        '$2b$12$8Ny02eSVGIoMQqnFx.tHKOCiAH7YGtqOi/o9lQfHh8SkVMGaa8.Gy',  # Admin@123
         'Admin User',
         1,
         'What is your favorite sport?',
@@ -155,7 +155,7 @@ def reset_database():
     print("\n📋 Sample Data Created:")
     print("👤 Admin User:")
     print("   Email: admin@sportzone.com")
-    print("   Password: admin123")
+    print("   Password: Admin@123")
     print("\n👤 Sample User:")
     print("   Email: user@example.com")
     print("   Password: user123")
