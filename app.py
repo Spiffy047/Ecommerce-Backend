@@ -55,11 +55,11 @@ def init_db():
         # Create tables with proper constraints
         cursor.execute('''
             CREATE TABLE users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT UNIQUE NOT NULL,
+                id SERIAL PRIMARY KEY,
+                email VARCHAR(255) UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
-                name TEXT NOT NULL,
-                phone TEXT,
+                name VARCHAR(255) NOT NULL,
+                phone VARCHAR(50),
                 address TEXT,
                 is_admin INTEGER DEFAULT 0,
                 security_question_1 TEXT,
@@ -72,10 +72,10 @@ def init_db():
         
         cursor.execute('''
             CREATE TABLE products (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
                 description TEXT,
-                price REAL NOT NULL CHECK(price > 0),
+                price DECIMAL(10,2) NOT NULL CHECK(price > 0),
                 image_url TEXT,
                 stock INTEGER DEFAULT 0 CHECK(stock >= 0),
                 total_sold INTEGER DEFAULT 0 CHECK(total_sold >= 0)
@@ -159,7 +159,7 @@ def register():
         
         cursor = conn.cursor()
         
-        cursor.execute('SELECT id FROM users WHERE email = ?', (data['email'],))
+        cursor.execute('SELECT id FROM users WHERE email = %s', (data['email'],))
         if cursor.fetchone():
             conn.close()
             return jsonify({'error': 'Email already exists'}), 400
@@ -170,13 +170,13 @@ def register():
         
         cursor.execute('''
             INSERT INTO users (email, password_hash, name, phone, address, security_question_1, security_answer_1, security_question_2, security_answer_2)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
         ''', (data['email'], password_hash.decode('utf-8'), data['name'], 
               data.get('phone', ''), data.get('address', ''),
               data['security_question_1'], security_answer_1.decode('utf-8'),
               data['security_question_2'], security_answer_2.decode('utf-8')))
         
-        user_id = cursor.lastrowid
+        user_id = cursor.fetchone()[0]
         conn.commit()
         conn.close()
         
