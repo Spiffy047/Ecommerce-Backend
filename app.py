@@ -795,8 +795,7 @@ def change_password():
         return jsonify({'error': 'Failed to change password'}), 500
 
 # Initialize database on startup
-@app.before_first_request
-def initialize_database():
+with app.app_context():
     try:
         init_db()
     except Exception as e:
