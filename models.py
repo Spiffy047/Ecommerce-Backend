@@ -107,7 +107,5 @@ def close_db(e=None):
     db = get_db()
     db.remove()
 
-def clear_db():
-    engine = create_engine('sqlite:///ecommerce.db')
-    Base.metadata.drop_all(engine)
-    print("Database tables cleared.")
+# clear_db() function removed for production safety
+# This function was dangerous as it could wipe out the entire database
