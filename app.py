@@ -15,7 +15,9 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 REACT_BUILD_DIR = os.path.join(BASE_DIR, '..', 'frontend', 'dist')
 
 app = Flask(__name__, static_folder=REACT_BUILD_DIR)
-CORS(app) 
+CORS(app, origins=["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:5173", "https://sportzone-ecommerce.netlify.app", "https://sportzone-ecommerce.vercel.app"], 
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+     allow_headers=["Content-Type", "Authorization"])
 app.config["JWT_SECRET_KEY"] = "dev-secret"
 jwt = JWTManager(app)
 
@@ -493,4 +495,4 @@ initialize_app()
 
 if __name__ == "__main__":
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host='0.0.0.0', port=port, debug=True)
