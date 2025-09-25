@@ -54,14 +54,20 @@ def init_db():
         
         cursor = conn.cursor()
         
-        # Check if users table exists
+        # Check if all required tables exist
+        required_tables = ['users', 'products', 'orders', 'order_items', 'reviews']
+        all_tables_exist = True
+        
         try:
-            cursor.execute("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'users')")
-            table_exists = cursor.fetchone()[0]
+            for table in required_tables:
+                cursor.execute("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = %s)", (table,))
+                if not cursor.fetchone()[0]:
+                    all_tables_exist = False
+                    break
         except:
-            table_exists = False
+            all_tables_exist = False
             
-        if table_exists:
+        if all_tables_exist:
             print("Database tables already exist - preserving existing data")
             conn.close()
             return
@@ -69,7 +75,7 @@ def init_db():
         print("Creating database tables...")
         
         cursor.execute('''
-            CREATE TABLE users (
+            CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 email VARCHAR(255) UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
@@ -86,7 +92,7 @@ def init_db():
         ''')
         
         cursor.execute('''
-            CREATE TABLE products (
+            CREATE TABLE IF NOT EXISTS products (
                 id SERIAL PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
                 description TEXT,
@@ -98,7 +104,7 @@ def init_db():
         ''')
         
         cursor.execute('''
-            CREATE TABLE orders (
+            CREATE TABLE IF NOT EXISTS orders (
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL,
                 order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -109,7 +115,7 @@ def init_db():
         ''')
         
         cursor.execute('''
-            CREATE TABLE order_items (
+            CREATE TABLE IF NOT EXISTS order_items (
                 id SERIAL PRIMARY KEY,
                 order_id INTEGER NOT NULL,
                 product_id INTEGER NOT NULL,
@@ -121,7 +127,7 @@ def init_db():
         ''')
         
         cursor.execute('''
-            CREATE TABLE reviews (
+            CREATE TABLE IF NOT EXISTS reviews (
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL,
                 product_id INTEGER NOT NULL,
@@ -134,19 +140,23 @@ def init_db():
             )
         ''')
         
-        # Create admin user
-        admin_password = bcrypt.hashpw('Admin@123'.encode('utf-8'), bcrypt.gensalt())
-        cursor.execute('''
-            INSERT INTO users (email, password_hash, name, is_admin, security_question_1, security_answer_1, security_question_2, security_answer_2)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        ''', ('admin@sportzone.com', admin_password.decode('utf-8'), 'Admin User', 1, 
-              'What is your favorite color?', bcrypt.hashpw('blue'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
-              'What city were you born in?', bcrypt.hashpw('admin'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')))
-        print('Admin user created')
+        # Create admin user if not exists
+        cursor.execute('SELECT id FROM users WHERE email = %s', ('admin@sportzone.com',))
+        if not cursor.fetchone():
+            admin_password = bcrypt.hashpw('Admin@123'.encode('utf-8'), bcrypt.gensalt())
+            cursor.execute('''
+                INSERT INTO users (email, password_hash, name, is_admin, security_question_1, security_answer_1, security_question_2, security_answer_2)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ''', ('admin@sportzone.com', admin_password.decode('utf-8'), 'Admin User', 1, 
+                  'What is your favorite color?', bcrypt.hashpw('blue'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
+                  'What city were you born in?', bcrypt.hashpw('admin'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')))
+            print('Admin user created')
+        else:
+            print('Admin user already exists')
         
         conn.commit()
         conn.close()
-        print("PostgreSQL database tables created successfully")
+        print("PostgreSQL database initialization completed successfully")
         
     except Exception as e:
         print(f"Database initialization error: {e}")
