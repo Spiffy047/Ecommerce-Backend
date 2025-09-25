@@ -1,17 +1,25 @@
 #!/usr/bin/env python3
 import sqlite3
+import bcrypt
+import os
 
-def create_database():
+def create_fresh_database():
+    # Delete existing database if it exists
+    if os.path.exists('ecommerce.db'):
+        os.remove('ecommerce.db')
+        print("Removed existing database")
+    
+    # Create fresh database
     conn = sqlite3.connect('ecommerce.db')
     cursor = conn.cursor()
     
-    # Users table
+    # Create users table
     cursor.execute('''
-        CREATE TABLE users (
+        CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
-            name TEXT,
+            name TEXT NOT NULL,
             phone TEXT,
             address TEXT,
             is_admin INTEGER DEFAULT 0,
@@ -23,9 +31,9 @@ def create_database():
         )
     ''')
     
-    # Products table
+    # Create products table
     cursor.execute('''
-        CREATE TABLE products (
+        CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             description TEXT,
@@ -36,35 +44,21 @@ def create_database():
         )
     ''')
     
-    # Reviews table
+    # Create orders table
     cursor.execute('''
-        CREATE TABLE reviews (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            rating INTEGER,
-            comment TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            user_id INTEGER,
-            product_id INTEGER,
-            FOREIGN KEY (user_id) REFERENCES users (id),
-            FOREIGN KEY (product_id) REFERENCES products (id)
-        )
-    ''')
-    
-    # Orders table
-    cursor.execute('''
-        CREATE TABLE orders (
+        CREATE TABLE IF NOT EXISTS orders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
             order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            status TEXT,
+            status TEXT DEFAULT 'pending',
             total_amount REAL,
             FOREIGN KEY (user_id) REFERENCES users (id)
         )
     ''')
     
-    # Order items table
+    # Create order_items table
     cursor.execute('''
-        CREATE TABLE order_items (
+        CREATE TABLE IF NOT EXISTS order_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             order_id INTEGER,
             product_id INTEGER,
@@ -75,34 +69,44 @@ def create_database():
         )
     ''')
     
-    # Create fresh admin user with pre-computed hash for Admin@123
+    # Create reviews table
     cursor.execute('''
-        INSERT INTO users (email, password_hash, name, is_admin)
-        VALUES (?, ?, ?, ?)
-    ''', ('admin@sportzone.com', '$2b$12$8Ny02eSVGIoMQqnFx.tHKOCiAH7YGtqOi/o9lQfHh8SkVMGaa8.Gy', 'Admin User', 1))
+        CREATE TABLE IF NOT EXISTS reviews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            product_id INTEGER,
+            rating INTEGER,
+            comment TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id),
+            FOREIGN KEY (product_id) REFERENCES products (id)
+        )
+    ''')
     
-    # Create sample user with pre-computed hash for user123
+    # Create admin user with correct password
+    admin_password = bcrypt.hashpw('Admin@123'.encode('utf-8'), bcrypt.gensalt())
     cursor.execute('''
-        INSERT INTO users (email, password_hash, name)
-        VALUES (?, ?, ?)
-    ''', ('user@example.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj6hsxq5S/kS', 'John Doe'))
+        INSERT INTO users (email, password_hash, name, is_admin, security_question_1, security_answer_1, security_question_2, security_answer_2)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', ('admin@sportzone.com', admin_password.decode('utf-8'), 'Admin User', 1, 
+          'What is your favorite color?', bcrypt.hashpw('blue'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
+          'What city were you born in?', bcrypt.hashpw('admin'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')))
     
-    # Create sample products
+    # Add sample products
     products = [
-        ('Professional Basketball', 'Official size basketball', 3899, '/images/products/basketball.jpg', 50, 0),
-        ('Smart Fitness Watch', 'Advanced fitness tracking', 32499, '/images/products/watch.jpg', 30, 0),
-        ('Yoga Mat Premium', 'Non-slip yoga mat', 6499, '/images/products/yoga.jpg', 100, 0)
+        ('Nike Air Max', 'Premium running shoes', 129.99, 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400', 50),
+        ('Adidas Football', 'Professional football', 29.99, 'https://images.unsplash.com/photo-1486286701208-1d58e9338013?w=400', 30),
+        ('Basketball Jersey', 'Team basketball jersey', 49.99, 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400', 25),
+        ('Tennis Racket', 'Professional tennis racket', 89.99, 'https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=400', 15),
+        ('Yoga Mat', 'Premium yoga mat', 39.99, 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=400', 40)
     ]
-    
-    for product in products:
-        cursor.execute('''
-            INSERT INTO products (name, description, price, image_url, stock, total_sold)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', product)
+    cursor.executemany('INSERT INTO products (name, description, price, image_url, stock) VALUES (?, ?, ?, ?, ?)', products)
     
     conn.commit()
     conn.close()
-    print("✅ Fresh database created with admin@sportzone.com / Admin@123")
+    
+    print("Fresh database created successfully")
+    print("Admin credentials: admin@sportzone.com / Admin@123")
 
-if __name__ == "__main__":
-    create_database()
+if __name__ == '__main__':
+    create_fresh_database()
