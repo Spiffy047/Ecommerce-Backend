@@ -10,7 +10,7 @@ app = Flask(__name__)
 app.config['JWT_SECRET_KEY'] = 'your-secret-key-change-in-production'
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
 
-CORS(app, origins=["https://ecommerce-frontend-eosin-seven.vercel.app", "http://localhost:5173"])
+CORS(app)
 jwt = JWTManager(app)
 
 def init_db():
@@ -282,6 +282,65 @@ def checkout():
     conn.close()
     return jsonify({'message': 'Order placed successfully', 'order_id': order_id}), 201
 
+@app.route('/api/products/<int:product_id>', methods=['GET'])
+def get_product(product_id):
+    conn = sqlite3.connect('ecommerce.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM products WHERE id = ?', (product_id,))
+    product = cursor.fetchone()
+    conn.close()
+    
+    if not product:
+        return jsonify({'error': 'Product not found'}), 404
+    
+    return jsonify({
+        'id': product[0], 'name': product[1], 'description': product[2], 'price': product[3],
+        'image_url': product[4], 'stock': product[5], 'total_sold': product[6]
+    })
+
+@app.route('/api/products/<int:product_id>', methods=['PUT'])
+@jwt_required()
+def update_product(product_id):
+    user_id = get_jwt_identity()
+    
+    conn = sqlite3.connect('ecommerce.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT is_admin FROM users WHERE id = ?', (user_id,))
+    user = cursor.fetchone()
+    
+    if not user or not user[0]:
+        conn.close()
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    data = request.get_json()
+    cursor.execute('''
+        UPDATE products SET name = ?, description = ?, price = ?, image_url = ?, stock = ?
+        WHERE id = ?
+    ''', (data['name'], data['description'], data['price'], data['image_url'], data['stock'], product_id))
+    
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Product updated successfully'}), 200
+
+@app.route('/api/products/<int:product_id>', methods=['DELETE'])
+@jwt_required()
+def delete_product(product_id):
+    user_id = get_jwt_identity()
+    
+    conn = sqlite3.connect('ecommerce.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT is_admin FROM users WHERE id = ?', (user_id,))
+    user = cursor.fetchone()
+    
+    if not user or not user[0]:
+        conn.close()
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    cursor.execute('DELETE FROM products WHERE id = ?', (product_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'message': 'Product deleted successfully'}), 200
+
 @app.route('/api/admin/bestsellers', methods=['GET'])
 @jwt_required()
 def get_bestsellers():
@@ -304,6 +363,59 @@ def get_bestsellers():
         'id': p[0], 'name': p[1], 'description': p[2], 'price': p[3],
         'image_url': p[4], 'stock': p[5], 'total_sold': p[6]
     } for p in products])
+
+@app.route('/api/auth/forgot-password', methods=['POST'])
+def forgot_password():
+    data = request.get_json()
+    
+    conn = sqlite3.connect('ecommerce.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT security_question_1, security_question_2 FROM users WHERE email = ?', (data['email'],))
+    user = cursor.fetchone()
+    conn.close()
+    
+    if not user:
+        return jsonify({'error': 'Email not found'}), 404
+    
+    return jsonify({
+        'security_questions': [user[0], user[1]]
+    }), 200
+
+@app.route('/api/auth/verify-security', methods=['POST'])
+def verify_security():
+    data = request.get_json()
+    
+    conn = sqlite3.connect('ecommerce.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, security_answer_1, security_answer_2 FROM users WHERE email = ?', (data['email'],))
+    user = cursor.fetchone()
+    conn.close()
+    
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    if (bcrypt.checkpw(data['answers'][0].encode('utf-8'), user[1].encode('utf-8')) and
+        bcrypt.checkpw(data['answers'][1].encode('utf-8'), user[2].encode('utf-8'))):
+        reset_token = create_access_token(identity=user[0], expires_delta=timedelta(minutes=15))
+        return jsonify({'reset_token': reset_token}), 200
+    
+    return jsonify({'error': 'Security answers do not match'}), 401
+
+@app.route('/api/auth/reset-password', methods=['POST'])
+@jwt_required()
+def reset_password():
+    user_id = get_jwt_identity()
+    data = request.get_json()
+    
+    password_hash = bcrypt.hashpw(data['new_password'].encode('utf-8'), bcrypt.gensalt())
+    
+    conn = sqlite3.connect('ecommerce.db')
+    cursor = conn.cursor()
+    cursor.execute('UPDATE users SET password_hash = ? WHERE id = ?', (password_hash.decode('utf-8'), user_id))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'message': 'Password reset successfully'}), 200
 
 if __name__ == '__main__':
     init_db()
