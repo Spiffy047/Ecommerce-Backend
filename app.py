@@ -5,7 +5,7 @@ from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from functools import wraps
 import bcrypt
-from models import get_db, init_db, User, Product, Review, Order, order_items_table
+from models import get_db, init_db, User, Product, Review, Order, OrderItem
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import and_
@@ -48,22 +48,36 @@ def serve(path):
 @app.post("/api/auth/register")
 def register():
     data = request.get_json()
-    email, password, name = data.get("email"), data.get("password"), data.get("name")
+    required_fields = ["email", "password", "name", "security_question_1", "security_answer_1", "security_question_2", "security_answer_2"]
     
-    if not email or not password:
-        return jsonify(error="Email and password are required"), 400
+    for field in required_fields:
+        if not data.get(field):
+            return jsonify(error=f"{field.replace('_', ' ').title()} is required"), 400
     
-    existing_user = session.query(User).filter_by(email=email).first()
+    existing_user = session.query(User).filter_by(email=data["email"]).first()
     if existing_user:
         return jsonify(error="User already exists"), 409
         
-    password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    new_user = User(email=email, password_hash=password_hash, name=name)
+    password_hash = bcrypt.hashpw(data["password"].encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    answer1_hash = bcrypt.hashpw(data["security_answer_1"].lower().encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    answer2_hash = bcrypt.hashpw(data["security_answer_2"].lower().encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    
+    new_user = User(
+        email=data["email"],
+        password_hash=password_hash,
+        name=data["name"],
+        phone=data.get("phone"),
+        address=data.get("address"),
+        security_question_1=data["security_question_1"],
+        security_answer_1=answer1_hash,
+        security_question_2=data["security_question_2"],
+        security_answer_2=answer2_hash
+    )
     session.add(new_user)
     session.commit()
     
     access_token = create_access_token(identity=new_user.id)
-    return jsonify(message="User created successfully", access_token=access_token), 201
+    return jsonify(message="User created successfully", access_token=access_token, user={"id": new_user.id, "name": new_user.name, "email": new_user.email}), 201
 
 @app.post("/api/auth/login")
 def login():
@@ -75,7 +89,68 @@ def login():
         return jsonify(error="Invalid email or password"), 401
     
     access_token = create_access_token(identity=user.id)
-    return jsonify(access_token=access_token), 200
+    return jsonify(access_token=access_token, user={"id": user.id, "name": user.name, "email": user.email, "is_admin": user.is_admin}), 200
+
+@app.post("/api/auth/admin-login")
+def admin_login():
+    data = request.get_json()
+    email, password = data.get("email"), data.get("password")
+    
+    user = session.query(User).filter_by(email=email, is_admin=1).first()
+    if not user or not bcrypt.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8')):
+        return jsonify(error="Invalid admin credentials"), 401
+    
+    access_token = create_access_token(identity=user.id)
+    return jsonify(access_token=access_token, user={"id": user.id, "name": user.name, "email": user.email, "is_admin": user.is_admin}), 200
+
+@app.post("/api/auth/forgot-password")
+def forgot_password():
+    data = request.get_json()
+    email = data.get("email")
+    
+    user = session.query(User).filter_by(email=email).first()
+    if not user:
+        return jsonify(error="User not found"), 404
+    
+    return jsonify({
+        "security_questions": [
+            user.security_question_1,
+            user.security_question_2
+        ]
+    }), 200
+
+@app.post("/api/auth/verify-security")
+def verify_security():
+    data = request.get_json()
+    email = data.get("email")
+    answers = data.get("answers")
+    
+    user = session.query(User).filter_by(email=email).first()
+    if not user:
+        return jsonify(error="User not found"), 404
+    
+    if not (bcrypt.checkpw(answers[0].lower().encode('utf-8'), user.security_answer_1.encode('utf-8')) and
+            bcrypt.checkpw(answers[1].lower().encode('utf-8'), user.security_answer_2.encode('utf-8'))):
+        return jsonify(error="Security answers incorrect"), 401
+    
+    reset_token = create_access_token(identity=user.id)
+    return jsonify(reset_token=reset_token), 200
+
+@app.post("/api/auth/reset-password")
+@jwt_required()
+def reset_password():
+    user_id = get_jwt_identity()
+    data = request.get_json()
+    new_password = data.get("new_password")
+    
+    user = session.query(User).filter_by(id=user_id).first()
+    if not user:
+        return jsonify(error="User not found"), 404
+    
+    user.password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    session.commit()
+    
+    return jsonify(message="Password reset successfully"), 200
 
 @app.post("/api/auth/change-password")
 @jwt_required()
@@ -105,6 +180,41 @@ def change_password():
         session.rollback()
         print(f"Error changing password: {e}")
         return jsonify(error="Failed to change password"), 500
+
+@app.get("/api/user/profile")
+@jwt_required()
+def get_profile():
+    user_id = get_jwt_identity()
+    user = session.query(User).filter_by(id=user_id).first()
+    if not user:
+        return jsonify(error="User not found"), 404
+    
+    return jsonify({
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "phone": user.phone,
+        "address": user.address
+    }), 200
+
+@app.put("/api/user/profile")
+@jwt_required()
+def update_profile():
+    user_id = get_jwt_identity()
+    user = session.query(User).filter_by(id=user_id).first()
+    if not user:
+        return jsonify(error="User not found"), 404
+    
+    data = request.get_json()
+    if "name" in data:
+        user.name = data["name"]
+    if "phone" in data:
+        user.phone = data["phone"]
+    if "address" in data:
+        user.address = data["address"]
+    
+    session.commit()
+    return jsonify(message="Profile updated successfully"), 200
 
 # --- PRODUCTS ---
 @app.get("/api/products")
@@ -222,6 +332,7 @@ def get_reviews(pid):
                 'id': r.id,
                 'rating': r.rating,
                 'comment': r.comment,
+                'user_name': r.user.name if r.user else 'Anonymous',
                 'created_at': r.created_at.isoformat() if r.created_at else None
             })
         return jsonify(review_list), 200
@@ -230,9 +341,10 @@ def get_reviews(pid):
         return jsonify([]), 200
 
 @app.post("/api/products/<int:pid>/reviews")
+@jwt_required()
 def add_review(pid):
     try:
-        # Check if product exists
+        user_id = get_jwt_identity()
         product = session.query(Product).filter_by(id=pid).first()
         if not product:
             return jsonify(error="Product not found"), 404
@@ -246,13 +358,8 @@ def add_review(pid):
         if not isinstance(rating, int) or rating < 1 or rating > 5:
             return jsonify(error="Rating must be between 1 and 5"), 400
         
-        # Ensure default user exists
-        default_user = session.query(User).filter_by(email="demo@example.com").first()
-        if not default_user:
-            return jsonify(error="Default user not found"), 500
-        
         new_review = Review(
-            user_id=default_user.id, 
+            user_id=user_id, 
             product_id=pid, 
             rating=rating, 
             comment=comment
@@ -260,10 +367,12 @@ def add_review(pid):
         session.add(new_review)
         session.commit()
         
+        user = session.query(User).filter_by(id=user_id).first()
         return jsonify({
             'id': new_review.id,
             'rating': new_review.rating,
             'comment': new_review.comment,
+            'user_name': user.name,
             'created_at': new_review.created_at.isoformat() if new_review.created_at else None
         }), 201
         
@@ -281,8 +390,10 @@ def checkout():
     if not items:
         return jsonify(error="No items"), 400
 
+    total_amount = 0
     new_order = Order(user_id=user_id, status="completed")
     session.add(new_order)
+    session.flush()  # Get order ID
     
     for item_data in items:
         product = session.query(Product).filter_by(id=item_data["productId"]).first()
@@ -290,13 +401,63 @@ def checkout():
             session.rollback()
             return jsonify(error="Invalid product or insufficient inventory"), 400
         
-        # This will automatically add to the order_items association table
-        new_order.products.append(product)
+        order_item = OrderItem(
+            order_id=new_order.id,
+            product_id=product.id,
+            quantity=item_data["quantity"],
+            price_at_time=product.price
+        )
+        session.add(order_item)
+        
         product.stock -= item_data["quantity"]
-        session.add(product)
+        product.total_sold += item_data["quantity"]
+        total_amount += product.price * item_data["quantity"]
 
+    new_order.total_amount = total_amount
     session.commit()
-    return jsonify(message="Checkout successful"), 200
+    return jsonify(message="Checkout successful", order_id=new_order.id), 200
+
+@app.get("/api/user/orders")
+@jwt_required()
+def get_user_orders():
+    user_id = get_jwt_identity()
+    orders = session.query(Order).filter_by(user_id=user_id).all()
+    
+    order_list = []
+    for order in orders:
+        items = []
+        for item in order.order_items:
+            items.append({
+                "product_name": item.product.name,
+                "quantity": item.quantity,
+                "price": item.price_at_time,
+                "image_url": item.product.image_url
+            })
+        
+        order_list.append({
+            "id": order.id,
+            "order_date": order.order_date.isoformat(),
+            "status": order.status,
+            "total_amount": order.total_amount,
+            "items": items
+        })
+    
+    return jsonify(order_list), 200
+
+@app.get("/api/admin/bestsellers")
+@admin_required
+def get_bestsellers():
+    products = session.query(Product).order_by(Product.total_sold.desc()).limit(10).all()
+    bestsellers = []
+    for p in products:
+        bestsellers.append({
+            "id": p.id,
+            "name": p.name,
+            "total_sold": p.total_sold,
+            "price": p.price,
+            "image_url": p.image_url
+        })
+    return jsonify(bestsellers), 200
 
 def initialize_app():
     """Initialize database and create admin user if needed"""
