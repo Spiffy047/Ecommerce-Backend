@@ -3,7 +3,7 @@ services:
     name: sportzone-backend
     env: python
     runtime: python-3.11.9
-    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt && python simple_reset.py"
+    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt && python create_fresh_db.py"
     startCommand: "gunicorn app:app"
     envVars:
       - key: FLASK_ENV
