@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
-import psycopg
+import psycopg2
 import bcrypt
 from datetime import datetime, timedelta
 import os
@@ -23,7 +23,7 @@ jwt = JWTManager(app)
 def get_db_connection():
     try:
         database_url = os.getenv('DATABASE_URL', 'postgresql://ecommerce_sporty_user:mSbKLG3SqU1GvXoYWlipjUaJpoby5Ojz@dpg-d3anv03uibrs73b12tig-a.oregon-postgres.render.com/ecommerce_sporty')
-        conn = psycopg.connect(database_url)
+        conn = psycopg2.connect(database_url)
         return conn
     except Exception as e:
         print(f"Database connection error: {e}")
