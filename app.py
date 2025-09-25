@@ -1,7 +1,8 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
-import sqlite3
+import psycopg2
+import psycopg2.extras
 import bcrypt
 from datetime import datetime, timedelta
 import os
@@ -22,9 +23,8 @@ jwt = JWTManager(app)
 
 def get_db_connection():
     try:
-        conn = sqlite3.connect('ecommerce.db')
-        conn.row_factory = sqlite3.Row
-        conn.execute('PRAGMA foreign_keys = ON')  # Enable foreign key constraints
+        database_url = os.getenv('DATABASE_URL', 'postgresql://ecommerce_sporty_user:mSbKLG3SqU1GvXoYWlipjUaJpoby5Ojz@dpg-d3anv03uibrs73b12tig-a.oregon-postgres.render.com/ecommerce_sporty')
+        conn = psycopg2.connect(database_url)
         return conn
     except Exception as e:
         print(f"Database connection error: {e}")
@@ -47,8 +47,8 @@ def init_db():
         cursor = conn.cursor()
         
         # Check if tables exist
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
-        if cursor.fetchone():
+        cursor.execute("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'users')")
+        if cursor.fetchone()[0]:
             print("Database already exists - preserving existing data")
             conn.close()
             return
@@ -120,12 +120,12 @@ def init_db():
         ''')
         
         # Create admin user only if not exists
-        cursor.execute('SELECT id FROM users WHERE email = ?', ('admin@sportzone.com',))
+        cursor.execute('SELECT id FROM users WHERE email = %s', ('admin@sportzone.com',))
         if not cursor.fetchone():
             admin_password = bcrypt.hashpw('Admin@123'.encode('utf-8'), bcrypt.gensalt())
             cursor.execute('''
                 INSERT INTO users (email, password_hash, name, is_admin, security_question_1, security_answer_1, security_question_2, security_answer_2)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ''', ('admin@sportzone.com', admin_password.decode('utf-8'), 'Admin User', 1, 
                   'What is your favorite color?', bcrypt.hashpw('blue'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
                   'What city were you born in?', bcrypt.hashpw('admin'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')))
