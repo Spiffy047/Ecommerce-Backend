@@ -23,6 +23,7 @@ jwt = JWTManager(app)
 def get_db_connection():
     try:
         database_url = os.getenv('DATABASE_URL', 'postgresql://ecommerce_sporty_user:mSbKLG3SqU1GvXoYWlipjUaJpoby5Ojz@dpg-d3anv03uibrs73b12tig-a.oregon-postgres.render.com/ecommerce_sporty')
+        # Parse PostgreSQL URL for pg8000
         import urllib.parse as urlparse
         url = urlparse.urlparse(database_url)
         conn = pg8000.connect(
@@ -39,6 +40,7 @@ def get_db_connection():
         return None
 
 def get_user_id():
+    """Get user ID from JWT token and convert to int"""
     try:
         identity = get_jwt_identity()
         return int(identity) if identity else None
@@ -52,13 +54,15 @@ def init_db():
             raise Exception("Could not connect to PostgreSQL database")
         
         cursor = conn.cursor()
+        
+        # Check if tables exist
         cursor.execute("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'users')")
         if cursor.fetchone()[0]:
             print("Database already exists - preserving existing data")
             conn.close()
             return
         
-        # Create all tables
+        # Create tables with proper PostgreSQL constraints
         cursor.execute('''
             CREATE TABLE users (
                 id SERIAL PRIMARY KEY,
@@ -125,7 +129,7 @@ def init_db():
             )
         ''')
         
-        # Create admin user
+        # Create admin user only if not exists
         cursor.execute('SELECT id FROM users WHERE email = %s', ('admin@sportzone.com',))
         if not cursor.fetchone():
             admin_password = bcrypt.hashpw('Admin@123'.encode('utf-8'), bcrypt.gensalt())
@@ -135,6 +139,7 @@ def init_db():
             ''', ('admin@sportzone.com', admin_password.decode('utf-8'), 'Admin User', 1, 
                   'What is your favorite color?', bcrypt.hashpw('blue'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
                   'What city were you born in?', bcrypt.hashpw('admin'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')))
+            print('Admin user created')
         
         conn.commit()
         conn.close()
@@ -142,9 +147,9 @@ def init_db():
         
     except Exception as e:
         print(f"Database initialization error: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
         raise
 
-# Authentication endpoints
 @app.route('/api/auth/register', methods=['POST'])
 def register():
     try:
@@ -162,6 +167,7 @@ def register():
             return jsonify({'error': 'Database connection failed'}), 500
         
         cursor = conn.cursor()
+        
         cursor.execute('SELECT id FROM users WHERE email = %s', (data['email'],))
         if cursor.fetchone():
             conn.close()
@@ -248,7 +254,6 @@ def admin_login():
         print(f"Admin login error: {e}")
         return jsonify({'error': 'Admin login failed'}), 500
 
-# Product endpoints
 @app.route('/api/products', methods=['GET'])
 def get_products():
     try:
