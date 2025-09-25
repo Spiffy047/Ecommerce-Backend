@@ -49,14 +49,24 @@ def init_db():
     try:
         conn = get_db_connection()
         if not conn:
-            raise Exception("Could not connect to PostgreSQL database")
+            print("Could not connect to PostgreSQL database")
+            return
         
         cursor = conn.cursor()
-        cursor.execute("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'users')")
-        if cursor.fetchone()[0]:
-            print("Database already exists - preserving existing data")
+        
+        # Check if users table exists
+        try:
+            cursor.execute("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'users')")
+            table_exists = cursor.fetchone()[0]
+        except:
+            table_exists = False
+            
+        if table_exists:
+            print("Database tables already exist - preserving existing data")
             conn.close()
             return
+            
+        print("Creating database tables...")
         
         cursor.execute('''
             CREATE TABLE users (
@@ -124,19 +134,19 @@ def init_db():
             )
         ''')
         
-        cursor.execute('SELECT id FROM users WHERE email = %s', ('admin@sportzone.com',))
-        if not cursor.fetchone():
-            admin_password = bcrypt.hashpw('Admin@123'.encode('utf-8'), bcrypt.gensalt())
-            cursor.execute('''
-                INSERT INTO users (email, password_hash, name, is_admin, security_question_1, security_answer_1, security_question_2, security_answer_2)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            ''', ('admin@sportzone.com', admin_password.decode('utf-8'), 'Admin User', 1, 
-                  'What is your favorite color?', bcrypt.hashpw('blue'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
-                  'What city were you born in?', bcrypt.hashpw('admin'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')))
+        # Create admin user
+        admin_password = bcrypt.hashpw('Admin@123'.encode('utf-8'), bcrypt.gensalt())
+        cursor.execute('''
+            INSERT INTO users (email, password_hash, name, is_admin, security_question_1, security_answer_1, security_question_2, security_answer_2)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        ''', ('admin@sportzone.com', admin_password.decode('utf-8'), 'Admin User', 1, 
+              'What is your favorite color?', bcrypt.hashpw('blue'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
+              'What city were you born in?', bcrypt.hashpw('admin'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')))
+        print('Admin user created')
         
         conn.commit()
         conn.close()
-        print("PostgreSQL database initialized successfully")
+        print("PostgreSQL database tables created successfully")
         
     except Exception as e:
         print(f"Database initialization error: {e}")
@@ -666,7 +676,132 @@ def get_bestsellers():
         print(f"Get bestsellers error: {e}")
         return jsonify({'error': 'Failed to fetch bestsellers'}), 500
 
+@app.route('/api/auth/forgot-password', methods=['POST'])
+def forgot_password():
+    try:
+        data = request.get_json()
+        if not data or not data.get('email'):
+            return jsonify({'error': 'Email required'}), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = conn.cursor()
+        cursor.execute('SELECT security_question_1, security_question_2 FROM users WHERE email = %s', (data['email'],))
+        user = cursor.fetchone()
+        conn.close()
+        
+        if not user:
+            return jsonify({'error': 'Email not found'}), 404
+        
+        return jsonify({
+            'security_questions': [user[0], user[1]]
+        }), 200
+        
+    except Exception as e:
+        print(f"Forgot password error: {e}")
+        return jsonify({'error': 'Failed to process request'}), 500
+
+@app.route('/api/auth/verify-security', methods=['POST'])
+def verify_security():
+    try:
+        data = request.get_json()
+        if not data or not data.get('email') or not data.get('answers'):
+            return jsonify({'error': 'Email and answers required'}), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, security_answer_1, security_answer_2 FROM users WHERE email = %s', (data['email'],))
+        user = cursor.fetchone()
+        conn.close()
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        if (bcrypt.checkpw(data['answers'][0].encode('utf-8'), user[1].encode('utf-8')) and
+            bcrypt.checkpw(data['answers'][1].encode('utf-8'), user[2].encode('utf-8'))):
+            reset_token = create_access_token(identity=str(user[0]), expires_delta=timedelta(minutes=15))
+            return jsonify({'reset_token': reset_token}), 200
+        
+        return jsonify({'error': 'Security answers do not match'}), 401
+        
+    except Exception as e:
+        print(f"Verify security error: {e}")
+        return jsonify({'error': 'Failed to verify security answers'}), 500
+
+@app.route('/api/auth/reset-password', methods=['POST'])
+@jwt_required()
+def reset_password():
+    try:
+        user_id = get_jwt_identity()
+        data = request.get_json()
+        
+        if not data or not data.get('new_password'):
+            return jsonify({'error': 'New password required'}), 400
+        
+        password_hash = bcrypt.hashpw(data['new_password'].encode('utf-8'), bcrypt.gensalt())
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = conn.cursor()
+        cursor.execute('UPDATE users SET password_hash = %s WHERE id = %s', (password_hash.decode('utf-8'), user_id))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'message': 'Password reset successfully'}), 200
+        
+    except Exception as e:
+        print(f"Reset password error: {e}")
+        return jsonify({'error': 'Failed to reset password'}), 500
+
+@app.route('/api/auth/change-password', methods=['POST'])
+@jwt_required()
+def change_password():
+    try:
+        user_id = get_jwt_identity()
+        data = request.get_json()
+        
+        if not data or not data.get('currentPassword') or not data.get('newPassword'):
+            return jsonify({'error': 'Current and new password required'}), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = conn.cursor()
+        cursor.execute('SELECT password_hash FROM users WHERE id = %s', (user_id,))
+        user = cursor.fetchone()
+        
+        if not user or not bcrypt.checkpw(data['currentPassword'].encode('utf-8'), user[0].encode('utf-8')):
+            conn.close()
+            return jsonify({'error': 'Current password is incorrect'}), 401
+        
+        new_password_hash = bcrypt.hashpw(data['newPassword'].encode('utf-8'), bcrypt.gensalt())
+        cursor.execute('UPDATE users SET password_hash = %s WHERE id = %s', (new_password_hash.decode('utf-8'), user_id))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'message': 'Password changed successfully'})
+        
+    except Exception as e:
+        print(f"Change password error: {e}")
+        return jsonify({'error': 'Failed to change password'}), 500
+
+# Initialize database on startup
+@app.before_first_request
+def initialize_database():
+    try:
+        init_db()
+    except Exception as e:
+        print(f"Database initialization failed: {e}")
+
 if __name__ == '__main__':
-    init_db()
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
