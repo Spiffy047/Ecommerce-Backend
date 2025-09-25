@@ -31,16 +31,18 @@ def get_db_connection():
 
 def init_db():
     try:
-        # Remove existing database to ensure clean state
-        if os.path.exists('ecommerce.db'):
-            os.remove('ecommerce.db')
-            print("Removed existing database")
-        
         conn = get_db_connection()
         if not conn:
-            raise Exception("Failed to connect to database")
+            conn = sqlite3.connect('ecommerce.db')
         
         cursor = conn.cursor()
+        
+        # Check if tables exist
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+        if cursor.fetchone():
+            print("Database already exists")
+            conn.close()
+            return
         
         # Create tables with proper constraints
         cursor.execute('''
@@ -117,13 +119,13 @@ def init_db():
               'What is your favorite color?', bcrypt.hashpw('blue'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
               'What city were you born in?', bcrypt.hashpw('admin'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')))
         
-        # Add sample products
+        # Add sample products with KSh prices
         products = [
-            ('Nike Air Max', 'Premium running shoes', 129.99, 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400', 50),
-            ('Adidas Football', 'Professional football', 29.99, 'https://images.unsplash.com/photo-1486286701208-1d58e9338013?w=400', 30),
-            ('Basketball Jersey', 'Team basketball jersey', 49.99, 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400', 25),
-            ('Tennis Racket', 'Professional tennis racket', 89.99, 'https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=400', 15),
-            ('Yoga Mat', 'Premium yoga mat', 39.99, 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=400', 40)
+            ('Nike Air Max', 'Premium running shoes', 12999.00, 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400', 50),
+            ('Adidas Football', 'Professional football', 2999.00, 'https://images.unsplash.com/photo-1486286701208-1d58e9338013?w=400', 30),
+            ('Basketball Jersey', 'Team basketball jersey', 4999.00, 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400', 25),
+            ('Tennis Racket', 'Professional tennis racket', 8999.00, 'https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=400', 15),
+            ('Yoga Mat', 'Premium yoga mat', 3999.00, 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=400', 40)
         ]
         cursor.executemany('INSERT INTO products (name, description, price, image_url, stock) VALUES (?, ?, ?, ?, ?)', products)
         
@@ -459,8 +461,27 @@ def update_product(product_id):
         user_id = get_jwt_identity()
         data = request.get_json()
         
+        print(f"Update product {product_id} with data: {data}")
+        
         if not data:
             return jsonify({'error': 'No data provided'}), 400
+        
+        # Validate required fields
+        required_fields = ['name', 'description', 'price', 'image_url', 'stock']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'error': f'Missing required field: {field}'}), 400
+        
+        # Validate data types and values
+        try:
+            price = float(data['price'])
+            stock = int(data['stock'])
+            if price <= 0:
+                return jsonify({'error': 'Price must be positive'}), 400
+            if stock < 0:
+                return jsonify({'error': 'Stock cannot be negative'}), 400
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Invalid price or stock value'}), 400
         
         conn = get_db_connection()
         if not conn:
@@ -474,10 +495,20 @@ def update_product(product_id):
             conn.close()
             return jsonify({'error': 'Admin access required'}), 403
         
+        # Check if product exists
+        cursor.execute('SELECT id FROM products WHERE id = ?', (product_id,))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({'error': 'Product not found'}), 404
+        
         cursor.execute('''
             UPDATE products SET name = ?, description = ?, price = ?, image_url = ?, stock = ?
             WHERE id = ?
-        ''', (data['name'], data['description'], data['price'], data['image_url'], data['stock'], product_id))
+        ''', (data['name'], data['description'], price, data['image_url'], stock, product_id))
+        
+        if cursor.rowcount == 0:
+            conn.close()
+            return jsonify({'error': 'No rows updated'}), 400
         
         conn.commit()
         conn.close()
@@ -485,6 +516,7 @@ def update_product(product_id):
         
     except Exception as e:
         print(f"Update product error: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
         return jsonify({'error': 'Failed to update product', 'details': str(e)}), 500
 
 @app.route('/api/products/<int:product_id>', methods=['DELETE'])
