@@ -24,9 +24,18 @@ def get_db_connection():
     try:
         conn = sqlite3.connect('ecommerce.db')
         conn.row_factory = sqlite3.Row
+        conn.execute('PRAGMA foreign_keys = ON')  # Enable foreign key constraints
         return conn
     except Exception as e:
         print(f"Database connection error: {e}")
+        return None
+
+def get_user_id():
+    """Get user ID from JWT token and convert to int"""
+    try:
+        identity = get_jwt_identity()
+        return int(identity) if identity else None
+    except (ValueError, TypeError):
         return None
 
 def init_db():
@@ -177,7 +186,7 @@ def register():
         conn.commit()
         conn.close()
         
-        access_token = create_access_token(identity=user_id)
+        access_token = create_access_token(identity=str(user_id))
         return jsonify({'access_token': access_token, 'user': {'id': user_id, 'name': data['name'], 'email': data['email']}}), 201
         
     except Exception as e:
@@ -202,7 +211,7 @@ def login():
         conn.close()
         
         if user and bcrypt.checkpw(data['password'].encode('utf-8'), user[2].encode('utf-8')):
-            access_token = create_access_token(identity=user[0])
+            access_token = create_access_token(identity=str(user[0]))
             return jsonify({
                 'access_token': access_token,
                 'user': {'id': user[0], 'name': user[3], 'email': user[1], 'is_admin': user[6]}
@@ -232,7 +241,7 @@ def admin_login():
         conn.close()
         
         if user and bcrypt.checkpw(data['password'].encode('utf-8'), user[2].encode('utf-8')):
-            access_token = create_access_token(identity=user[0])
+            access_token = create_access_token(identity=str(user[0]))
             return jsonify({
                 'access_token': access_token,
                 'user': {'id': user[0], 'name': user[3], 'email': user[1], 'is_admin': user[6]}
@@ -271,7 +280,9 @@ def get_products():
 @jwt_required()
 def add_product():
     try:
-        user_id = get_jwt_identity()
+        user_id = get_user_id()
+        if not user_id:
+            return jsonify({'error': 'Invalid token'}), 401
         data = request.get_json()
         
         if not data:
@@ -338,7 +349,9 @@ def get_reviews(product_id):
 @jwt_required()
 def add_review(product_id):
     try:
-        user_id = get_jwt_identity()
+        user_id = get_user_id()
+        if not user_id:
+            return jsonify({'error': 'Invalid token'}), 401
         data = request.get_json()
         
         if not data or 'rating' not in data or 'comment' not in data:
@@ -352,6 +365,21 @@ def add_review(product_id):
             return jsonify({'error': 'Database connection failed'}), 500
         
         cursor = conn.cursor()
+        
+        # Check if product exists
+        cursor.execute('SELECT name FROM products WHERE id = ?', (product_id,))
+        product = cursor.fetchone()
+        if not product:
+            conn.close()
+            return jsonify({'error': 'Product not found'}), 404
+        
+        # Check if user already reviewed this product
+        cursor.execute('SELECT id FROM reviews WHERE user_id = ? AND product_id = ?', (user_id, product_id))
+        existing_review = cursor.fetchone()
+        if existing_review:
+            conn.close()
+            return jsonify({'error': 'You have already reviewed this product'}), 400
+        
         cursor.execute('''
             INSERT INTO reviews (user_id, product_id, rating, comment)
             VALUES (?, ?, ?, ?)
@@ -369,7 +397,9 @@ def add_review(product_id):
 @jwt_required()
 def checkout():
     try:
-        user_id = get_jwt_identity()
+        user_id = get_user_id()
+        if not user_id:
+            return jsonify({'error': 'Invalid token'}), 401
         data = request.get_json()
         
         if not data or not data.get('items'):
@@ -523,7 +553,9 @@ def update_product(product_id):
 @jwt_required()
 def delete_product(product_id):
     try:
-        user_id = get_jwt_identity()
+        user_id = get_user_id()
+        if not user_id:
+            return jsonify({'error': 'Invalid token'}), 401
         
         conn = get_db_connection()
         if not conn:
@@ -537,13 +569,45 @@ def delete_product(product_id):
             conn.close()
             return jsonify({'error': 'Admin access required'}), 403
         
+        # Check if product exists
+        cursor.execute('SELECT name FROM products WHERE id = ?', (product_id,))
+        product = cursor.fetchone()
+        if not product:
+            conn.close()
+            return jsonify({'error': 'Product not found'}), 404
+        
+        # Check for dependencies
+        cursor.execute('SELECT COUNT(*) FROM order_items WHERE product_id = ?', (product_id,))
+        order_count = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM reviews WHERE product_id = ?', (product_id,))
+        review_count = cursor.fetchone()[0]
+        
+        if order_count > 0:
+            conn.close()
+            return jsonify({
+                'error': f'Cannot delete product "{product[0]}". It has {order_count} associated orders.'
+            }), 400
+        
+        # Delete reviews first (if any)
+        deleted_reviews = 0
+        if review_count > 0:
+            cursor.execute('DELETE FROM reviews WHERE product_id = ?', (product_id,))
+            deleted_reviews = cursor.rowcount
+        
+        # Delete the product
         cursor.execute('DELETE FROM products WHERE id = ?', (product_id,))
+        
         conn.commit()
         conn.close()
-        return jsonify({'message': 'Product deleted successfully'}), 200
+        return jsonify({
+            'message': f'Product "{product[0]}" deleted successfully',
+            'deleted_reviews': deleted_reviews
+        }), 200
         
     except Exception as e:
         print(f"Delete product error: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
         return jsonify({'error': 'Failed to delete product', 'details': str(e)}), 500
 
 @app.route('/api/admin/bestsellers', methods=['GET'])
@@ -625,7 +689,7 @@ def verify_security():
         
         if (bcrypt.checkpw(data['answers'][0].encode('utf-8'), user[1].encode('utf-8')) and
             bcrypt.checkpw(data['answers'][1].encode('utf-8'), user[2].encode('utf-8'))):
-            reset_token = create_access_token(identity=user[0], expires_delta=timedelta(minutes=15))
+            reset_token = create_access_token(identity=str(user[0]), expires_delta=timedelta(minutes=15))
             return jsonify({'reset_token': reset_token}), 200
         
         return jsonify({'error': 'Security answers do not match'}), 401
@@ -801,6 +865,62 @@ def change_password():
     except Exception as e:
         print(f"Change password error: {e}")
         return jsonify({'error': 'Failed to change password', 'details': str(e)}), 500
+
+@app.route('/api/user/delete', methods=['DELETE'])
+@jwt_required()
+def delete_user_account():
+    try:
+        user_id = get_user_id()
+        if not user_id:
+            return jsonify({'error': 'Invalid token'}), 401
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = conn.cursor()
+        
+        # Check if user exists
+        cursor.execute('SELECT name, is_admin FROM users WHERE id = ?', (user_id,))
+        user = cursor.fetchone()
+        if not user:
+            conn.close()
+            return jsonify({'error': 'User not found'}), 404
+        
+        # Prevent admin deletion
+        if user[1]:
+            conn.close()
+            return jsonify({'error': 'Cannot delete admin account'}), 400
+        
+        # Check for orders
+        cursor.execute('SELECT COUNT(*) FROM orders WHERE user_id = ?', (user_id,))
+        order_count = cursor.fetchone()[0]
+        
+        if order_count > 0:
+            conn.close()
+            return jsonify({
+                'error': f'Cannot delete account. You have {order_count} order(s) in the system.'
+            }), 400
+        
+        # Delete user reviews first
+        cursor.execute('DELETE FROM reviews WHERE user_id = ?', (user_id,))
+        deleted_reviews = cursor.rowcount
+        
+        # Delete the user
+        cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'message': f'Account for "{user[0]}" deleted successfully',
+            'deleted_reviews': deleted_reviews
+        }), 200
+        
+    except Exception as e:
+        print(f"Delete user error: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': 'Failed to delete account', 'details': str(e)}), 500
 
 if __name__ == '__main__':
     init_db()
