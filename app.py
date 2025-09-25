@@ -31,7 +31,8 @@ def get_db_connection():
             port=url.port or 5432,
             user=url.username,
             password=url.password,
-            database=url.path[1:]
+            database=url.path[1:],
+            ssl_context=True
         )
         return conn
     except Exception as e:
