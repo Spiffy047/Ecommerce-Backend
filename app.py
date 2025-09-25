@@ -1,314 +1,311 @@
-import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
-import bcrypt
 import sqlite3
-from datetime import datetime
+import bcrypt
+from datetime import datetime, timedelta
+import os
 
 app = Flask(__name__)
-CORS(app, origins=["*"], methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
-app.config["JWT_SECRET_KEY"] = os.environ.get('JWT_SECRET_KEY', 'dev-secret')
+app.config['JWT_SECRET_KEY'] = 'your-secret-key-change-in-production'
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
+
+CORS(app, origins=["https://ecommerce-frontend-eosin-seven.vercel.app", "http://localhost:5173"])
 jwt = JWTManager(app)
 
-def get_db():
-    return sqlite3.connect('ecommerce.db')
-
-# AUTH ENDPOINTS
-@app.post("/api/auth/login")
-def login():
-    data = request.get_json()
-    email, password = data.get("email"), data.get("password")
-    
-    conn = get_db()
+def init_db():
+    conn = sqlite3.connect('ecommerce.db')
     cursor = conn.cursor()
-    cursor.execute("SELECT id, password_hash, name, is_admin FROM users WHERE email = ?", (email,))
-    user = cursor.fetchone()
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            name TEXT NOT NULL,
+            phone TEXT,
+            address TEXT,
+            is_admin INTEGER DEFAULT 0,
+            security_question_1 TEXT,
+            security_answer_1 TEXT,
+            security_question_2 TEXT,
+            security_answer_2 TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT,
+            price REAL NOT NULL,
+            image_url TEXT,
+            stock INTEGER DEFAULT 0,
+            total_sold INTEGER DEFAULT 0
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            status TEXT DEFAULT 'pending',
+            total_amount REAL,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS order_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id INTEGER,
+            product_id INTEGER,
+            quantity INTEGER,
+            price_at_time REAL,
+            FOREIGN KEY (order_id) REFERENCES orders (id),
+            FOREIGN KEY (product_id) REFERENCES products (id)
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS reviews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            product_id INTEGER,
+            rating INTEGER,
+            comment TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id),
+            FOREIGN KEY (product_id) REFERENCES products (id)
+        )
+    ''')
+    
+    # Check if admin exists
+    cursor.execute('SELECT * FROM users WHERE email = ?', ('admin@sportzone.com',))
+    if not cursor.fetchone():
+        admin_password = bcrypt.hashpw('Admin@123'.encode('utf-8'), bcrypt.gensalt())
+        cursor.execute('''
+            INSERT INTO users (email, password_hash, name, is_admin, security_question_1, security_answer_1, security_question_2, security_answer_2)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', ('admin@sportzone.com', admin_password.decode('utf-8'), 'Admin User', 1, 
+              'What is your favorite color?', bcrypt.hashpw('blue'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
+              'What city were you born in?', bcrypt.hashpw('admin'.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')))
+    
+    # Add sample products
+    cursor.execute('SELECT COUNT(*) FROM products')
+    if cursor.fetchone()[0] == 0:
+        products = [
+            ('Nike Air Max', 'Premium running shoes', 129.99, 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400', 50),
+            ('Adidas Football', 'Professional football', 29.99, 'https://images.unsplash.com/photo-1486286701208-1d58e9338013?w=400', 30),
+            ('Basketball Jersey', 'Team basketball jersey', 49.99, 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400', 25),
+            ('Tennis Racket', 'Professional tennis racket', 89.99, 'https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=400', 15),
+            ('Yoga Mat', 'Premium yoga mat', 39.99, 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=400', 40)
+        ]
+        cursor.executemany('INSERT INTO products (name, description, price, image_url, stock) VALUES (?, ?, ?, ?, ?)', products)
+    
+    conn.commit()
     conn.close()
-    
-    if not user or not bcrypt.checkpw(password.encode('utf-8'), user[1].encode('utf-8')):
-        return jsonify(error="Invalid credentials"), 401
-    
-    token = create_access_token(identity=user[0])
-    return jsonify(access_token=token, user={"id": user[0], "name": user[2], "email": email, "is_admin": user[3]})
 
-@app.post("/api/auth/admin-login")
-def admin_login():
-    data = request.get_json()
-    email, password = data.get("email"), data.get("password")
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, password_hash, name FROM users WHERE email = ? AND is_admin = 1", (email,))
-    user = cursor.fetchone()
-    conn.close()
-    
-    if not user or not bcrypt.checkpw(password.encode('utf-8'), user[1].encode('utf-8')):
-        return jsonify(error="Invalid admin credentials"), 401
-    
-    token = create_access_token(identity=user[0])
-    return jsonify(access_token=token, user={"id": user[0], "name": user[2], "email": email, "is_admin": 1})
-
-@app.post("/api/auth/register")
+@app.route('/api/auth/register', methods=['POST'])
 def register():
     data = request.get_json()
-    email, password, name = data.get("email"), data.get("password"), data.get("name")
     
-    if not all([email, password, name]):
-        return jsonify(error="Missing required fields"), 400
-    
-    conn = get_db()
+    conn = sqlite3.connect('ecommerce.db')
     cursor = conn.cursor()
     
-    # Check if user exists
-    cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
+    cursor.execute('SELECT * FROM users WHERE email = ?', (data['email'],))
     if cursor.fetchone():
         conn.close()
-        return jsonify(error="User already exists"), 409
+        return jsonify({'error': 'Email already exists'}), 400
     
-    # Create user
-    password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    cursor.execute("INSERT INTO users (email, password_hash, name) VALUES (?, ?, ?)", 
-                   (email, password_hash, name))
+    password_hash = bcrypt.hashpw(data['password'].encode('utf-8'), bcrypt.gensalt())
+    security_answer_1 = bcrypt.hashpw(data['securityAnswer1'].encode('utf-8'), bcrypt.gensalt())
+    security_answer_2 = bcrypt.hashpw(data['securityAnswer2'].encode('utf-8'), bcrypt.gensalt())
+    
+    cursor.execute('''
+        INSERT INTO users (email, password_hash, name, phone, address, security_question_1, security_answer_1, security_question_2, security_answer_2)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (data['email'], password_hash.decode('utf-8'), data['name'], 
+          data.get('phone', ''), data.get('address', ''),
+          data['securityQuestion1'], security_answer_1.decode('utf-8'),
+          data['securityQuestion2'], security_answer_2.decode('utf-8')))
+    
     user_id = cursor.lastrowid
     conn.commit()
     conn.close()
     
-    token = create_access_token(identity=user_id)
-    return jsonify(access_token=token, user={"id": user_id, "name": name, "email": email})
+    access_token = create_access_token(identity=user_id)
+    return jsonify({'access_token': access_token, 'user': {'id': user_id, 'name': data['name'], 'email': data['email']}}), 201
 
-# PRODUCT ENDPOINTS
-@app.get("/api/products")
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    
+    conn = sqlite3.connect('ecommerce.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM users WHERE email = ?', (data['email'],))
+    user = cursor.fetchone()
+    conn.close()
+    
+    if user and bcrypt.checkpw(data['password'].encode('utf-8'), user[2].encode('utf-8')):
+        access_token = create_access_token(identity=user[0])
+        return jsonify({
+            'access_token': access_token,
+            'user': {'id': user[0], 'name': user[3], 'email': user[1], 'is_admin': user[6]}
+        }), 200
+    
+    return jsonify({'error': 'Invalid credentials'}), 401
+
+@app.route('/api/auth/admin-login', methods=['POST'])
+def admin_login():
+    data = request.get_json()
+    
+    conn = sqlite3.connect('ecommerce.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM users WHERE email = ? AND is_admin = 1', (data['email'],))
+    user = cursor.fetchone()
+    conn.close()
+    
+    if user and bcrypt.checkpw(data['password'].encode('utf-8'), user[2].encode('utf-8')):
+        access_token = create_access_token(identity=user[0])
+        return jsonify({
+            'access_token': access_token,
+            'user': {'id': user[0], 'name': user[3], 'email': user[1], 'is_admin': user[6]}
+        }), 200
+    
+    return jsonify({'error': 'Invalid admin credentials'}), 401
+
+@app.route('/api/products', methods=['GET'])
 def get_products():
-    conn = get_db()
+    conn = sqlite3.connect('ecommerce.db')
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name, description, price, image_url, stock FROM products")
-    products = [{"id": row[0], "name": row[1], "description": row[2], "price": row[3], "image_url": row[4], "stock": row[5]} 
-                for row in cursor.fetchall()]
-    conn.close()
-    return jsonify(products)
-
-@app.get("/api/products/<int:pid>")
-def get_product(pid):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, name, description, price, image_url, stock FROM products WHERE id = ?", (pid,))
-    product = cursor.fetchone()
+    cursor.execute('SELECT * FROM products')
+    products = cursor.fetchall()
     conn.close()
     
-    if not product:
-        return jsonify(error="Product not found"), 404
-    
-    return jsonify({"id": product[0], "name": product[1], "description": product[2], 
-                   "price": product[3], "image_url": product[4], "stock": product[5]})
+    return jsonify([{
+        'id': p[0], 'name': p[1], 'description': p[2], 'price': p[3], 
+        'image_url': p[4], 'stock': p[5], 'total_sold': p[6]
+    } for p in products])
 
-@app.post("/api/products")
+@app.route('/api/products', methods=['POST'])
 @jwt_required()
 def add_product():
     user_id = get_jwt_identity()
     
-    # Check admin
-    conn = get_db()
+    conn = sqlite3.connect('ecommerce.db')
     cursor = conn.cursor()
-    cursor.execute("SELECT is_admin FROM users WHERE id = ?", (user_id,))
+    cursor.execute('SELECT is_admin FROM users WHERE id = ?', (user_id,))
     user = cursor.fetchone()
+    
     if not user or not user[0]:
         conn.close()
-        return jsonify(error="Admin access required"), 403
+        return jsonify({'error': 'Admin access required'}), 403
     
     data = request.get_json()
-    name = data.get("name")
-    description = data.get("description")
-    price = data.get("price")
-    image_url = data.get("image_url")
-    stock = data.get("stock", 0)
+    cursor.execute('''
+        INSERT INTO products (name, description, price, image_url, stock)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (data['name'], data['description'], data['price'], data['image_url'], data['stock']))
     
-    if not name:
-        conn.close()
-        return jsonify(error="Product name required"), 400
-    
-    cursor.execute("INSERT INTO products (name, description, price, image_url, stock) VALUES (?, ?, ?, ?, ?)",
-                   (name, description, price, image_url, stock))
-    product_id = cursor.lastrowid
     conn.commit()
     conn.close()
-    
-    return jsonify({"id": product_id, "name": name, "description": description, 
-                   "price": price, "image_url": image_url, "stock": stock}), 201
+    return jsonify({'message': 'Product added successfully'}), 201
 
-@app.put("/api/products/<int:pid>")
-@jwt_required()
-def update_product(pid):
-    user_id = get_jwt_identity()
-    
-    # Check admin
-    conn = get_db()
+@app.route('/api/products/<int:product_id>/reviews', methods=['GET'])
+def get_reviews(product_id):
+    conn = sqlite3.connect('ecommerce.db')
     cursor = conn.cursor()
-    cursor.execute("SELECT is_admin FROM users WHERE id = ?", (user_id,))
-    user = cursor.fetchone()
-    if not user or not user[0]:
-        conn.close()
-        return jsonify(error="Admin access required"), 403
-    
-    data = request.get_json()
-    cursor.execute("UPDATE products SET name=?, description=?, price=?, image_url=?, stock=? WHERE id=?",
-                   (data.get("name"), data.get("description"), data.get("price"), 
-                    data.get("image_url"), data.get("stock"), pid))
-    conn.commit()
-    conn.close()
-    
-    return jsonify({"id": pid, **data})
-
-@app.delete("/api/products/<int:pid>")
-@jwt_required()
-def delete_product(pid):
-    user_id = get_jwt_identity()
-    
-    # Check admin
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT is_admin FROM users WHERE id = ?", (user_id,))
-    user = cursor.fetchone()
-    if not user or not user[0]:
-        conn.close()
-        return jsonify(error="Admin access required"), 403
-    
-    cursor.execute("DELETE FROM products WHERE id = ?", (pid,))
-    conn.commit()
-    conn.close()
-    
-    return jsonify(message="Product deleted")
-
-# REVIEW ENDPOINTS
-@app.get("/api/products/<int:pid>/reviews")
-def get_reviews(pid):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT r.id, r.rating, r.comment, r.created_at, u.name 
-        FROM reviews r 
-        JOIN users u ON r.user_id = u.id 
+    cursor.execute('''
+        SELECT r.*, u.name FROM reviews r
+        JOIN users u ON r.user_id = u.id
         WHERE r.product_id = ?
-    """, (pid,))
-    reviews = [{"id": row[0], "rating": row[1], "comment": row[2], 
-               "created_at": row[3], "user_name": row[4]} 
-               for row in cursor.fetchall()]
+        ORDER BY r.created_at DESC
+    ''', (product_id,))
+    reviews = cursor.fetchall()
     conn.close()
-    return jsonify(reviews)
+    
+    return jsonify([{
+        'id': r[0], 'user_id': r[1], 'product_id': r[2], 'rating': r[3],
+        'comment': r[4], 'created_at': r[5], 'user_name': r[6]
+    } for r in reviews])
 
-@app.post("/api/products/<int:pid>/reviews")
+@app.route('/api/products/<int:product_id>/reviews', methods=['POST'])
 @jwt_required()
-def add_review(pid):
+def add_review(product_id):
     user_id = get_jwt_identity()
     data = request.get_json()
-    rating = data.get("rating")
-    comment = data.get("comment")
     
-    if not rating or not comment:
-        return jsonify(error="Rating and comment required"), 400
-    
-    if not isinstance(rating, int) or rating < 1 or rating > 5:
-        return jsonify(error="Rating must be 1-5"), 400
-    
-    conn = get_db()
+    conn = sqlite3.connect('ecommerce.db')
     cursor = conn.cursor()
-    
-    # Check if product exists
-    cursor.execute("SELECT id FROM products WHERE id = ?", (pid,))
-    if not cursor.fetchone():
-        conn.close()
-        return jsonify(error="Product not found"), 404
-    
-    # Add review
-    cursor.execute("INSERT INTO reviews (user_id, product_id, rating, comment) VALUES (?, ?, ?, ?)",
-                   (user_id, pid, rating, comment))
-    review_id = cursor.lastrowid
-    
-    # Get user name
-    cursor.execute("SELECT name FROM users WHERE id = ?", (user_id,))
-    user_name = cursor.fetchone()[0]
+    cursor.execute('''
+        INSERT INTO reviews (user_id, product_id, rating, comment)
+        VALUES (?, ?, ?, ?)
+    ''', (user_id, product_id, data['rating'], data['comment']))
     
     conn.commit()
     conn.close()
-    
-    return jsonify({"id": review_id, "rating": rating, "comment": comment, 
-                   "user_name": user_name, "created_at": datetime.now().isoformat()}), 201
+    return jsonify({'message': 'Review added successfully'}), 201
 
-# CHECKOUT ENDPOINT
-@app.post("/api/orders/checkout")
+@app.route('/api/orders/checkout', methods=['POST'])
 @jwt_required()
 def checkout():
     user_id = get_jwt_identity()
     data = request.get_json()
-    items = data.get("items", [])
     
-    if not items:
-        return jsonify(error="No items"), 400
-    
-    conn = get_db()
+    conn = sqlite3.connect('ecommerce.db')
     cursor = conn.cursor()
     
-    total_amount = 0
+    cursor.execute('''
+        INSERT INTO orders (user_id, total_amount, status)
+        VALUES (?, ?, ?)
+    ''', (user_id, data['total'], 'completed'))
     
-    # Create order
-    cursor.execute("INSERT INTO orders (user_id, status, total_amount) VALUES (?, ?, ?)",
-                   (user_id, "completed", 0))
     order_id = cursor.lastrowid
     
-    # Process items
-    for item in items:
-        product_id = item.get("productId")
-        quantity = item.get("quantity")
+    for item in data['items']:
+        cursor.execute('''
+            INSERT INTO order_items (order_id, product_id, quantity, price_at_time)
+            VALUES (?, ?, ?, ?)
+        ''', (order_id, item['id'], item['quantity'], item['price']))
         
-        # Get product
-        cursor.execute("SELECT price, stock FROM products WHERE id = ?", (product_id,))
-        product = cursor.fetchone()
-        
-        if not product or product[1] < quantity:
-            conn.rollback()
-            conn.close()
-            return jsonify(error="Insufficient stock"), 400
-        
-        price = product[0]
-        total_amount += price * quantity
-        
-        # Add order item
-        cursor.execute("INSERT INTO order_items (order_id, product_id, quantity, price_at_time) VALUES (?, ?, ?, ?)",
-                       (order_id, product_id, quantity, price))
-        
-        # Update stock
-        cursor.execute("UPDATE products SET stock = stock - ?, total_sold = total_sold + ? WHERE id = ?",
-                       (quantity, quantity, product_id))
-    
-    # Update order total
-    cursor.execute("UPDATE orders SET total_amount = ? WHERE id = ?", (total_amount, order_id))
+        cursor.execute('''
+            UPDATE products SET stock = stock - ?, total_sold = total_sold + ?
+            WHERE id = ?
+        ''', (item['quantity'], item['quantity'], item['id']))
     
     conn.commit()
     conn.close()
-    
-    return jsonify(message="Checkout successful", order_id=order_id)
+    return jsonify({'message': 'Order placed successfully', 'order_id': order_id}), 201
 
-# ADMIN ENDPOINTS
-@app.get("/api/admin/bestsellers")
+@app.route('/api/admin/bestsellers', methods=['GET'])
 @jwt_required()
 def get_bestsellers():
     user_id = get_jwt_identity()
     
-    # Check admin
-    conn = get_db()
+    conn = sqlite3.connect('ecommerce.db')
     cursor = conn.cursor()
-    cursor.execute("SELECT is_admin FROM users WHERE id = ?", (user_id,))
+    cursor.execute('SELECT is_admin FROM users WHERE id = ?', (user_id,))
     user = cursor.fetchone()
+    
     if not user or not user[0]:
         conn.close()
-        return jsonify(error="Admin access required"), 403
+        return jsonify({'error': 'Admin access required'}), 403
     
-    cursor.execute("SELECT id, name, total_sold, price, image_url FROM products ORDER BY total_sold DESC LIMIT 10")
-    bestsellers = [{"id": row[0], "name": row[1], "total_sold": row[2], "price": row[3], "image_url": row[4]} 
-                   for row in cursor.fetchall()]
+    cursor.execute('SELECT * FROM products ORDER BY total_sold DESC LIMIT 5')
+    products = cursor.fetchall()
     conn.close()
-    return jsonify(bestsellers)
+    
+    return jsonify([{
+        'id': p[0], 'name': p[1], 'description': p[2], 'price': p[3],
+        'image_url': p[4], 'stock': p[5], 'total_sold': p[6]
+    } for p in products])
 
-if __name__ == "__main__":
+if __name__ == '__main__':
+    init_db()
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    app.run(host='0.0.0.0', port=port, debug=False)
